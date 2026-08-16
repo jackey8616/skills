@@ -53,7 +53,7 @@ People keep asking for one in the README. This skill is that list — it is what
 
 **It told me half the skills aren't installed.**
 
-A known bug, unfixed. Most of the skills the router routes you through set `disable-model-invocation: true`, which means the harness leaves them out of the skill list it injects into the agent's context. The agent reads that list as exhaustive and reports them missing. One reported session had it declare the whole spec-and-tickets flow absent and reroute to bare `/grilling` and `/tdd`. Fifteen of the plugin's twenty-six skills carry the flag, so this is the common case rather than an edge. They are installed. Type the slash command anyway, or check `.claude-plugin/plugin.json`, which is the authority on what is present.
+A known bug, unfixed. Most of the skills the router routes you through set `disable-model-invocation: true`, which means the harness leaves them out of the skill list it injects into the agent's context. The agent reads that list as exhaustive and reports them missing. One reported session had it declare the whole spec-and-tickets flow absent and reroute to bare `/grilling` and `/tdd`. Over half the set carries the flag, so this is the common case rather than an edge. They are installed. Type the slash command anyway, or list `~/.claude/skills` — the symlinks `scripts/link-skills.sh` wrote are the authority on what is present.
 
 **It described a skill's behaviour, and the skill doesn't do that.**
 
@@ -69,7 +69,7 @@ No. Three separate proposals have asked for a router that reads your local `skil
 
 **It told me to edit a SKILL.md.**
 
-That advice is often correct and rarely durable. Someone asked it how to make [implement](https://aihero.dev/skills-implement) close tickets, got told to add a line to the skill, and immediately spotted the problem: `npx skills update` overwrites the file, and the plugin install is read-only. Put standing behaviour in your own `CLAUDE.md` or `AGENTS.md`, or say it in the invocation. Prompt-level adaptations survive updates — pointing the flow at Linear instead of GitHub, or asking it which open tickets could run in parallel, are both things people do this way.
+Take it. You own these files — this repo is a fork you edit, not a managed bundle, so a change to a `SKILL.md` is permanent and no update overwrites it. That advice used to come with a catch upstream, where the skills arrived read-only and an edit was undone on the next update. Here the only question is whether the behaviour belongs to the skill or to one project: repo-specific standing behaviour still belongs in that repo's own `CLAUDE.md` or `AGENTS.md`, or in the invocation. Edit the skill when the change should hold everywhere you use it.
 
 **It named a skill I don't have, or missed one I do.**
 

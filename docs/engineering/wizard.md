@@ -80,10 +80,6 @@ The artifact does, unconditionally: it's a plain bash script and it doesn't care
 
 It did. It's now model-invoked, so the agent reaches for it unprompted when it hits a step you have to take. Nothing you could do before stopped working — model-invocation *adds* the agent's reach, it never removes yours, so `/wizard` behaves exactly as it did. What changed is the failure mode it retires: the agent hitting a credentials wall mid-build and dumping six numbered steps into the chat for you to follow by hand.
 
-**It used to be in `in-progress/` — where is it now?**
-
-`engineering/`, as of v1.2. It graduated out of the beta bucket and now ships in the plugin, so it arrives with the rest of the promoted set rather than needing an individual install. Its behaviour didn't change on graduation.
-
 ## It's working if
 
 - You're shown an ordered list of stages, and the values each one produces, and asked to confirm — before any script exists.
