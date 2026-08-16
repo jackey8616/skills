@@ -1,16 +1,50 @@
-Skills are organized into two bucket folders under `skills/`:
+Agent skills. Markdown only. No build, no tests, no dependencies, nothing to run.
 
-- `engineering/` — daily code work
-- `productivity/` — daily non-code workflow tools
+## Where things live
 
-Every skill must live in one of them, and must have a reference in the top-level `README.md` with the skill name linked to its `SKILL.md`. There is no beta, retired, or unpromoted bucket: a skill is either in the set or deleted.
+Two buckets under `skills/` — `engineering` and `productivity`. Those two, no others.
+`.agents/` — house rules and ADRs.
+`CONTEXT.md` — this repo's vocabulary. Write skills in its words.
 
-Each bucket folder has a `README.md` that lists every skill in the bucket with a one-line description, with the skill name linked to its `SKILL.md`. Both bucket `README.md`s and the top-level `README.md` group entries into **User-invoked** and **Model-invoked**.
+## Add, rename, remove a skill
 
-Every skill also has a human-facing docs page at `docs/<bucket>/<skill-name>.md` — the docs tree mirrors the two bucket folders under `skills/`. When you add, rename, or change the behaviour of a skill, create or re-sync its docs page following [.agents/writing-docs.md](./.agents/writing-docs.md). A finished page carries four sections — **What it does**, **When to reach for it**, **Common questions**, **It's working if** — and `writing-docs.md` holds the template, the section order, and where to hunt for the questions.
+Five things move together. Miss one, the repo lies.
 
-Every `SKILL.md` is either user-invoked (`disable-model-invocation: true` plus `policy.allow_implicit_invocation: false` in `agents/openai.yaml`, reachable only by the human) or model-invoked (model- or user-reachable). See [.agents/invocation.md](./.agents/invocation.md).
+1. `skills/<bucket>/<name>/SKILL.md`
+2. `skills/<bucket>/<name>/agents/openai.yaml` — Codex metadata, never optional
+3. `docs/<bucket>/<name>.md` — template and section order in [.agents/writing-docs.md](.agents/writing-docs.md)
+4. `skills/<bucket>/README.md` and top-level `README.md` — both list every skill, grouped User-invoked / Model-invoked, name linked to its `SKILL.md`
+5. `skills/engineering/ask-matt/SKILL.md` — routes every user-reachable skill. Re-read it, fix the map. A stale route is a router that lies.
 
-[`ask-matt`](./skills/engineering/ask-matt/SKILL.md) is the router that maps every user-reachable skill and how they relate. The same trigger that re-syncs a docs page applies to it: whenever you add, rename, remove, or change how a user-reachable skill fits the flows, re-read `ask-matt`'s `SKILL.md` and update it so the map stays accurate — a new skill it never mentions, or a stale one it still routes to, is a router that lies.
+Done when one `SKILL.md` has one docs page of the same name, and both READMEs carry it.
 
-To (re)link every skill into the local harness skill directories (`~/.claude/skills`, `~/.agents/skills`), run `scripts/link-skills.sh`. Each entry is a symlink into this repo, so a `git pull` keeps installed skills current; re-run the script after adding, removing, or renaming a skill. That script is the only install route — this repo is not published as a plugin and ships no release tooling.
+## Invocation
+
+Every skill is one or the other. Set it in both harnesses or neither.
+
+|                | `SKILL.md` frontmatter            | `agents/openai.yaml`                    |
+| -------------- | --------------------------------- | --------------------------------------- |
+| User-invoked   | `disable-model-invocation: true`  | `policy.allow_implicit_invocation: false` |
+| Model-invoked  | omit it                           | omit the `policy` block                 |
+
+The description follows the choice. User-invoked reads human-facing, one line, no triggers. Model-invoked keeps trigger phrasing ("Use when the user…") so auto-invocation fires.
+
+A user-invoked skill reaches model-invoked skills only. Rest in [.agents/invocation.md](.agents/invocation.md).
+
+## Writing any of it
+
+Load `/writing-for-agents` before editing a `SKILL.md`, this file, or any doc an agent reaches by pointer. House style lives in that skill, not here.
+
+## Install
+
+`scripts/link-skills.sh` symlinks every skill into `~/.claude/skills` and `~/.agents/skills`. The only route — no plugin, no package, no release.
+
+Symlinks are live. Edit `skills/engineering/tdd/SKILL.md` and `/tdd` changes now, in every repo on this machine. Re-run the script after add, rename, remove.
+
+## Gotchas
+
+`AGENTS.md` symlinks to this file. Edit here, both harnesses follow.
+
+Detached fork of `mattpocock/skills`. Docs pages still carry upstream's absolute `aihero.dev` and `github.com/mattpocock/skills` links. Some 404 — fork-only skills (`change-review`, `writing-proposals`) never existed upstream. Write repo-relative links; fix stale ones in pages you touch.
+
+ADR numbers are never reused. `0002` went with the plugin. The gap is correct.
