@@ -1,0 +1,5 @@
+interface:
+  display_name: "Change Review"
+  short_description: "Review a finished change, then archive it"
+policy:
+  allow_implicit_invocation: false
