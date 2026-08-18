@@ -24,6 +24,20 @@ Then, once in each repo you want to use them in:
 
 It asks which issue tracker the repo uses, which labels `/triage` should apply, and where docs belong — then initialises the spec layer (`openspec/`) that the engineering flow writes into.
 
+### Claude Code cloud containers
+
+A cloud container is ephemeral: the clone is fresh and `~/.claude/skills` is empty every session. A `SessionStart` hook is committed at [.claude/settings.json](.claude/settings.json), so a session opened on this repo links every skill before its first turn — nothing to type.
+
+For a session opened on a *different* repo, clone this one and link from that repo's own hook, or from the environment's setup script:
+
+```bash
+git clone --depth 1 https://github.com/jackey8616/skills.git ~/skills 2>/dev/null \
+  || git -C ~/skills pull --ff-only
+bash ~/skills/scripts/link-skills.sh
+```
+
+The link is live in the session that ran it — no restart. Model-invoked skills show up in the listing immediately; user-invoked ones are installed but stay out of it, so type the slash command anyway ([why](docs/engineering/ask.md)).
+
 ## How a skill is reached
 
 Skills split on one axis: who can invoke them.

@@ -24,6 +24,20 @@ scripts/link-skills.sh
 
 它會問這個 repo 用哪個 issue tracker、`/triage` 要套哪些標籤、文件要放哪裡，然後初始化工程流程會寫入的 spec layer（`openspec/`）。
 
+### Claude Code cloud container
+
+cloud container 是 ephemeral 的：每個 session 都是全新的 clone，`~/.claude/skills` 是空的。[.claude/settings.json](.claude/settings.json) 裡 commit 了一個 `SessionStart` hook，所以在這個 repo 上開的 session 會在第一個 turn 之前就把所有 skill 連好，不用打任何東西。
+
+如果 session 是開在*別的* repo 上，就在那個 repo 自己的 hook、或該 environment 的 setup script 裡把這份 clone 下來再連結：
+
+```bash
+git clone --depth 1 https://github.com/jackey8616/skills.git ~/skills 2>/dev/null \
+  || git -C ~/skills pull --ff-only
+bash ~/skills/scripts/link-skills.sh
+```
+
+連結在跑它的那個 session 當下就生效，不必重開。model-invoked 的 skill 會立刻出現在清單裡；user-invoked 的一樣裝好了，只是不會出現在清單上，直接打斜線指令就行（[原因](docs/engineering/ask.md)）。
+
 ## skill 怎麼被叫到
 
 skill 只分一個軸：誰能呼叫它。
