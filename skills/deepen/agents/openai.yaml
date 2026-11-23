@@ -1,5 +1,5 @@
 interface:
   display_name: "Deepen"
-  short_description: "Rewrite a question to ask for the deeper work"
+  short_description: "Deepen a question with methods from several fields"
 policy:
   allow_implicit_invocation: false
