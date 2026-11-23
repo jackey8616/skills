@@ -38,3 +38,4 @@ User-invoked — type the name to run it.
 | ----- | ------------ |
 | [`test-first-code-review`](skills/test-first-code-review/SKILL.md) | Review a fix by running its tests first, then reading the code. Never touches the codebase. |
 | [`codex-review`](skills/codex-review/SKILL.md) | Claude implements, Codex reviews with `test-first-code-review`, Claude fixes; up to ten rounds. Uses a Herdr reviewer tab when available. |
+| [`deepen`](skills/deepen/SKILL.md) | Rewrite a question the way a top professional would ask it: raw material, methods, and an outside check. Deeper, not bigger. |
