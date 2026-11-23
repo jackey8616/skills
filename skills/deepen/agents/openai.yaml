@@ -1,5 +1,5 @@
 interface:
   display_name: "Deepen"
-  short_description: "Rewrite a question the way a top professional would ask it"
+  short_description: "Rewrite a question to ask for the deeper work"
 policy:
   allow_implicit_invocation: false
