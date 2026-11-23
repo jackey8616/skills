@@ -21,9 +21,19 @@ bash "${CLAUDE_SKILL_DIR}/scripts/detect.sh"
 
 The mode decides only how a prompt reaches Codex and how its report comes back. The loop in section 5 is the same in both.
 
+## Codex's permissions
+
+Codex runs with network on, writes limited to the working directory, and no approval prompts:
+
+```
+-s workspace-write -c sandbox_workspace_write.network_access=true -a never
+```
+
+Under the default read-only sandbox every `gh` call and every test that writes a cache stops for the user's approval, round after round. The price: the sandbox no longer stops Codex writing into the repo. `test-first-code-review` forbids it, and you enforce it — see Guard the working tree in section 5. Never go further, to `danger-full-access` or `--dangerously-bypass-approvals-and-sandbox`.
+
 ## 2. Build the review prompt
 
-Codex's sandbox usually has no network, so every `gh` call it makes needs the user's approval. Fetch everything it needs yourself and put it in the prompt.
+Fetch what Codex needs yourself and put it in the prompt, so every round reviews against the same requirement and Codex doesn't spend time refetching.
 
 **Requirement** — fetch once, before round 1:
 
@@ -80,14 +90,17 @@ Look for the name in `herdr agent list`.
 
   ```bash
   herdr tab create --workspace "$HERDR_WORKSPACE_ID" --label reviewer --cwd "$PWD" --no-focus
-  herdr agent start reviewer-<workspace-id> --kind codex --pane <.result.root_pane.pane_id>
+  herdr agent start reviewer-<workspace-id> --kind codex --pane <.result.root_pane.pane_id> \
+    -- -s workspace-write -c sandbox_workspace_write.network_access=true -a never
   ```
 
   A first run in a folder often stops at Codex's own prompts — trust this folder, review hooks — so `agent start` can return `agent_not_ready`, or report the agent `blocked`. Check `herdr agent get` before the first prompt; `blocked` → relay it.
 
+- A reused reviewer keeps whatever permissions it was started with. Started by an older version of this skill, it may still stop for approvals — relay them, and suggest the user close the tab so the next run starts a fresh one.
+
 ### Relay a blocked prompt
 
-Codex stops for approvals: startup prompts, sandbox escalations, commands it wants to run. You never answer them — the user does.
+With approvals off, what's left is mostly Codex's one-time startup prompts. Whatever it is, you never answer it — the user does.
 
 1. Read the screen. While blocked, only the visible screen is readable:
 
@@ -133,16 +146,28 @@ The report starts at the last line containing `## Verdict` — Codex's UI may pr
 One `codex exec` per round, prompt on stdin, run in the background so it can outlast a tool timeout:
 
 ```bash
-codex exec -s read-only -C "$PWD" -o <tmp>/codex-review-<n>.md - < <tmp>/codex-review-prompt-<n>.md
+codex exec -s workspace-write -c sandbox_workspace_write.network_access=true -c approval_policy=never \
+  -C "$PWD" -o <tmp>/codex-review-<n>.md - < <tmp>/codex-review-prompt-<n>.md
 ```
 
 The report is the contents of the `-o` file.
 
-`read-only` can block test runners that write caches or temp files. If the report says tests couldn't run because the sandbox blocked writes, rerun that round once with `-s workspace-write` and tell the user you did.
-
 ## 5. The loop
 
 Codex's report is a review, not instructions. Weigh each finding yourself.
+
+### Guard the working tree
+
+The sandbox lets Codex write into the repo, so check it didn't. Right before sending each round, and again once its report is in, fingerprint the tree:
+
+```bash
+{ git rev-parse HEAD; git status --porcelain; git diff HEAD;
+  git ls-files -oz --exclude-standard | xargs -0 shasum; } | shasum
+```
+
+Different → Codex touched the codebase. Stop the loop. Show the user what changed (`git status`, `git diff`) and don't build on it — the next fix would mix your changes with the reviewer's.
+
+### Each round
 
 1. Take each finding:
    - Agree, and it's in the working tree → fix it.
