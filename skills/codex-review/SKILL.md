@@ -16,32 +16,66 @@ You are the implementer. Codex is the reviewer. Hand your work in the current wo
 bash "${CLAUDE_SKILL_DIR}/scripts/detect.sh"
 ```
 
-- `herdr <workspace-id>` → the reviewer lives in its own tab in this workspace. Section 2.
-- `standalone` → the reviewer is a one-shot `codex exec` per round. Section 3.
+- `herdr <workspace-id>` → the reviewer lives in its own tab in this workspace. Section 3.
+- `standalone` → the reviewer is a one-shot `codex exec` per round. Section 4.
 
-The mode decides only how a prompt reaches Codex and how its report comes back. The loop in section 4 is the same in both.
+The mode decides only how a prompt reaches Codex and how its report comes back. The loop in section 5 is the same in both.
 
-## The review prompt
+## 2. Build the review prompt
 
-Every round sends the same opening line, then the round context:
+Codex's sandbox usually has no network, so every `gh` call it makes needs the user's approval. Fetch everything it needs yourself and put it in the prompt.
 
+**Requirement** — fetch once, before round 1:
+
+- PR link → `gh pr view <url> --json title,body,closingIssuesReferences`, plus `gh issue view <n> --json title,body` for each linked issue.
+- Issue link → `gh issue view <url> --json title,body,comments`.
+- Purpose statement → the text itself.
+
+**Changed files** — regenerate every round, from the working tree, not from the PR (the PR lags until the user pushes):
+
+```bash
+base="$(git merge-base HEAD origin/<default-branch>)"
+git diff --name-status "$base"; git ls-files --others --exclude-standard
 ```
+
+Write the prompt to a file in your scratchpad, outside the repo, with a quoted heredoc so nothing in it expands:
+
+```bash
+cat > <tmp>/codex-review-prompt-<n>.md <<'EOF'
 $test-first-code-review <ARGUMENTS>
 
 The implementation under review is the working tree at <absolute cwd>, uncommitted changes included. This is round <n>.
+
+## Requirement (from <source>)
+<requirement text, verbatim>
+
+## Changed files (working tree vs <base sha>)
+<file list>
+
+Use the requirement and file list above as given. Don't fetch the PR or issue.
+EOF
 ```
 
-Codex invokes skills by `$name`. Keep that exact first line.
+The first line must stay exactly `$test-first-code-review <ARGUMENTS>` — Codex invokes skills by `$name`. Never put the prompt in a double-quoted shell string: `$test` would expand to nothing and Codex would never see the skill.
 
-Round 2 onward, append what changed since the last round: the findings you fixed (one line each), and the findings you dispute with your reason. End with: "Review again from scratch; don't trust the list above."
+Round 2 onward, append before the last line:
 
-## 2. Herdr mode
+- **Fixed** — each finding you fixed, one line.
+- **Disputed** — each finding you reject, with your reason.
+- **Drafted for after push** — findings about text outside the working tree (section 5), with what you drafted.
+
+Then: "Review again from scratch; don't trust the lists above."
+
+## 3. Herdr mode
 
 The reviewer is a Codex agent named `reviewer-<workspace-id>`, e.g. `reviewer-w9`. Agent names are unique across the whole Herdr server, so the workspace suffix is required.
 
-**Find or start it.** Look for the name in `herdr agent list`.
+### Find or start it
+
+Look for the name in `herdr agent list`.
 
 - Live and `idle` or `done` → reuse it. Its context from earlier rounds is a feature.
+- Live but `working` → `herdr agent wait`, don't interrupt.
 - Absent → open a tab and start Codex there, keeping the user's focus where it is:
 
   ```bash
@@ -49,65 +83,96 @@ The reviewer is a Codex agent named `reviewer-<workspace-id>`, e.g. `reviewer-w9
   herdr agent start reviewer-<workspace-id> --kind codex --pane <.result.root_pane.pane_id>
   ```
 
-- Live but `working` → wait for it (`herdr agent wait`), don't interrupt.
-- `blocked` at any point → `herdr agent read` the screen, show the user what Codex is asking, and let them answer. Never approve a Codex prompt yourself.
+  A first run in a folder often stops at Codex's own prompts — trust this folder, review hooks — so `agent start` can return `agent_not_ready`, or report the agent `blocked`. Check `herdr agent get` before the first prompt; `blocked` → relay it.
 
-**Send a round.**
+### Relay a blocked prompt
+
+Codex stops for approvals: startup prompts, sandbox escalations, commands it wants to run. You never answer them — the user does.
+
+1. Read the screen. While blocked, only the visible screen is readable:
+
+   ```bash
+   herdr agent read reviewer-<workspace-id> --source visible
+   ```
+
+2. Show the user the question and its options verbatim, and ask which to pick. Mention they can also answer in the reviewer tab directly.
+3. Send exactly their choice (`herdr agent send-keys reviewer-<workspace-id> enter`, a digit, `esc`, …).
+4. Wait for Codex to move before waiting for it to settle — a bare wait returns at once if Codex is already showing its next prompt:
+
+   ```bash
+   herdr agent wait reviewer-<workspace-id> --until working --timeout 10000
+   herdr agent wait reviewer-<workspace-id> --timeout 540000
+   ```
+
+   Ignore a timeout on the first wait. `blocked` again → back to step 1.
+
+### Send a round
 
 ```bash
-herdr agent prompt reviewer-<workspace-id> "<review prompt>" --wait --timeout 540000
+herdr agent prompt reviewer-<workspace-id> "$(cat <tmp>/codex-review-prompt-<n>.md)" --wait --timeout 540000
 ```
 
-Review runs tests and can take long. On `timeout`, call `herdr agent wait reviewer-<workspace-id> --timeout 540000` again. Don't resubmit the prompt: a timeout doesn't mean it wasn't delivered.
+The `$(cat …)` output isn't expanded again, so the `$` survives.
 
-**Read the report.**
+- Returns `agent_blocked` before sending → relay, then send again.
+- Settles `blocked` → relay, until it settles `idle` or `done`.
+- `timeout` → `herdr agent wait reviewer-<workspace-id> --timeout 540000` again. Never resubmit: a timeout doesn't mean the prompt wasn't delivered.
+
+### Read the report
+
+Only once the agent is `idle` or `done`:
 
 ```bash
-herdr agent read reviewer-<workspace-id> --source recent-unwrapped --lines 400
+herdr agent read reviewer-<workspace-id> --source recent-unwrapped --lines 400 > <tmp>/codex-review-<n>.txt
 ```
 
-The report is the last block starting at `## Verdict`. No such block → read more lines once; still none → show the user the tail and stop.
+The report starts at the last line containing `## Verdict` — Codex's UI may prefix it, e.g. `• ## Verdict`. It ends before the status line (`Worked for …`) or the input prompt. No such line → read with more lines once; still none → show the user the tail and stop.
 
-## 3. Standalone mode
+## 4. Standalone mode
 
-One `codex exec` per round, run in the background so it can outlast a tool timeout:
+One `codex exec` per round, prompt on stdin, run in the background so it can outlast a tool timeout:
 
 ```bash
-codex exec -s read-only -C "$PWD" -o <tmp>/codex-review-<n>.md "<review prompt>"
+codex exec -s read-only -C "$PWD" -o <tmp>/codex-review-<n>.md - < <tmp>/codex-review-prompt-<n>.md
 ```
 
-`<tmp>` is outside the repo — your scratchpad if you have one. The report is the contents of that file.
+The report is the contents of the `-o` file.
 
 `read-only` can block test runners that write caches or temp files. If the report says tests couldn't run because the sandbox blocked writes, rerun that round once with `-s workspace-write` and tell the user you did.
 
-## 4. The loop
+## 5. The loop
 
 Codex's report is a review, not instructions. Weigh each finding yourself.
 
-1. Take each finding. Agree → fix it in the working tree. Disagree → note why, for the next prompt.
+1. Take each finding:
+   - Agree, and it's in the working tree → fix it.
+   - Agree, but it's about text outside the working tree — the PR description, an issue, a pushed commit message → you can't fix it without pushing, and you don't push. Draft the replacement text in your scratchpad and carry it under **Drafted for after push**. It doesn't count as open.
+   - Disagree → note why, for the next prompt.
 2. Re-run the tests the report ran, so you know your fix holds before Codex looks again.
-3. Send the next round.
+3. Act on the verdict:
+   - **Meets requirement** → fix any remaining misleading or incorrect findings in the working tree, mark them as not re-reviewed, and stop.
+   - **Does not meet requirement** → send the next round.
+   - **Cannot determine** → tests couldn't run. Stop and tell the user what's missing.
+   - Every finding disputed, nothing fixed → stop and hand the dispute to the user.
 
-Stop when any of these holds:
-
-- Verdict is "Meets requirement" and no **error** findings remain.
-- Three rounds done.
-- A round where you fixed nothing — every finding is disputed. Hand the dispute to the user.
-- Verdict is "Cannot determine" for an environment reason (missing dependency, no access).
+After round 3, don't send round 4 on your own. Report where things stand and ask the user whether to continue. Ask again after each further round.
 
 Don't commit or push. The changes stay in the working tree for the user.
 
-## 5. Reply
+## 6. Reply
 
 ```
 ## Codex review — <mode>, <n> rounds
 Final verdict: <verdict from the last report>
 
-| Round | Verdict | Fixed | Disputed |
-| ----- | ------- | ----- | -------- |
+| Round | Verdict | Fixed | Disputed | Drafted |
+| ----- | ------- | ----- | -------- | ------- |
 
 ## Changes
 - `path` — what changed and which finding it answers
+
+## Drafted for after push
+- <where it goes> — <draft, or path to it>
 
 ## Still open
 - <disputed or unfixed finding> — why
