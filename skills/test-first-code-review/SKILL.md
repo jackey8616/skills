@@ -1,10 +1,10 @@
 ---
-name: readonly-review
+name: test-first-code-review
 description: Read-only review of a fix against its purpose, PR, or issue. Runs the fix's tests and reports errors, misleading content, and incorrect content.
 disable-model-invocation: true
 ---
 
-# Readonly review
+# Test-first code review
 
 You are the reviewer of `$ARGUMENTS`: a purpose statement, a PR link, or an issue link. The implementation under review is a fix, and a fix must come with test cases. You run those tests, judge whether the outcome meets the requirement, and report every error, misleading, or incorrect content you find.
 

@@ -1,5 +1,5 @@
 interface:
-  display_name: "Readonly Review"
+  display_name: "Test-First Code Review"
   short_description: "Run a fix's tests and report errors read-only"
 policy:
   allow_implicit_invocation: false
