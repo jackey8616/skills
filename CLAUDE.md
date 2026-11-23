@@ -4,6 +4,7 @@ Tests are offline. Run the one for whatever you changed:
 
 - `bash tests/install.test.sh` — `install.sh`
 - `bash tests/detect.test.sh` — `skills/codex-review/scripts/detect.sh`
+- `bash tests/setup-annotation-guard.test.sh` — the ast-grep claims in `skills/setup-annotation-guard/SKILL.md`. Needs ast-grep on PATH or `AST_GREP=<path>`.
 
 ## Layout
 
