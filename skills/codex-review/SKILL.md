@@ -41,10 +41,12 @@ Fetch what Codex needs yourself and put it in the prompt, so every round reviews
 - Issue link → `gh issue view <url> --json title,body,comments`.
 - Purpose statement → the text itself.
 
-**Changed files** — regenerate every round, from the working tree, not from the PR (the PR lags until the user pushes):
+**Changed files** — regenerate every round, from the working tree, not from the PR (the PR lags until the user pushes). Pick the base that matches what the work is:
+
+- A PR, or a branch whose commits are all this work → `base="$(git merge-base HEAD origin/<default-branch>)"`.
+- Only the uncommitted changes, on a branch that already carries unrelated commits → `base=HEAD`. The merge-base would drag those commits into the review.
 
 ```bash
-base="$(git merge-base HEAD origin/<default-branch>)"
 git diff --name-status "$base"; git ls-files --others --exclude-standard
 ```
 
