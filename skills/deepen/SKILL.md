@@ -18,13 +18,13 @@ The fields widen how the question is attacked, never what it asks. Deeper means 
 
 ## 1. Pick the fields
 
-Pick three or four fields that would each work this question with different methods:
+Pick as many fields as the question needs — each one working it with different methods. Typically:
 
 - **The home field** — the one the question obviously belongs to.
 - **Neighbours** — fields that study the same thing from another angle, with their own data and tools.
 - **One outsider** — a field that doesn't own this topic but has a method that fits its shape: forecasting for a decision under uncertainty, epidemiology for a "does X cause Y", reliability engineering for "why does this keep failing", historiography for "what really happened".
 
-Each field earns its place with a method the others don't bring. Two fields that would do the same thing → keep one. Name fields as disciplines, not people or personas.
+Each field earns its place with a method the others don't bring. Two fields that would do the same thing → keep one. Stop adding when the next field brings nothing new. Name fields as disciplines, not people or personas.
 
 ## 2. Answer the four, per field
 
