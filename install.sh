@@ -12,7 +12,8 @@
 # never touched.
 #
 # Env:
-#   SKILLS_REF  branch, tag, or commit to install (default: main)
+#   SKILLS_REF      branch, tag, or commit to install (default: main)
+#   SKILLS_ARCHIVE  local .tar.gz to install from instead of GitHub (tests)
 set -euo pipefail
 
 REPO="jackey8616/skills"
@@ -48,17 +49,22 @@ fi
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
-# Pin the ref to a commit so every destination gets the same tree.
-sha="$(curl -fsSL -H 'Accept: application/vnd.github.sha' \
-  "https://api.github.com/repos/$REPO/commits/$REF" 2>/dev/null || true)"
-[ -n "$sha" ] || sha="$REF"
-
-curl -fsSL "https://codeload.github.com/$REPO/tar.gz/$sha" | tar -xz -C "$tmp"
+if [ -n "${SKILLS_ARCHIVE:-}" ]; then
+  sha="local"
+  tar -xzf "$SKILLS_ARCHIVE" -C "$tmp"
+else
+  # Pin the ref to a commit so every destination gets the same tree.
+  sha="$(curl -fsSL -H 'Accept: application/vnd.github.sha' \
+    "https://api.github.com/repos/$REPO/commits/$REF" 2>/dev/null || true)"
+  [ -n "$sha" ] || sha="$REF"
+  curl -fsSL "https://codeload.github.com/$REPO/tar.gz/$sha" | tar -xz -C "$tmp"
+fi
 src="$(echo "$tmp"/*/skills)"
 [ -d "$src" ] || { echo "error: no skills/ in $REPO@$sha" >&2; exit 1; }
 
 names=()
 for skill_md in "$src"/*/SKILL.md; do
+  [ -f "$skill_md" ] || continue  # unmatched glob: no skills
   names+=("$(basename "$(dirname "$skill_md")")")
 done
 
@@ -70,9 +76,16 @@ for dest in "${DESTS[@]}"; do
   previous="$(owned "$dest")"
   kept=()
 
-  for name in "${names[@]}"; do
+  for name in ${names[@]+"${names[@]}"}; do
     target="$dest/$name"
-    if printf '%s\n' "$previous" | grep -qx "$name"; then
+    if [ -L "$target" ]; then
+      # A hand-made symlink, e.g. from a local checkout. Take it over,
+      # owned or not — diff would follow it and call it unchanged.
+      rm "$target"
+      cp -R "$src/$name" "$target"
+      echo "  installed $name (replaced symlink)"
+      kept+=("$name")
+    elif printf '%s\n' "$previous" | grep -qx "$name"; then
       if diff -rq "$src/$name" "$target" >/dev/null 2>&1; then
         echo "  unchanged $name"
         kept+=("$name")
@@ -81,12 +94,6 @@ for dest in "${DESTS[@]}"; do
       rm -rf "$target"
       cp -R "$src/$name" "$target"
       echo "  upgraded  $name"
-      kept+=("$name")
-    elif [ -L "$target" ]; then
-      # A hand-made symlink, e.g. from a local checkout. Take it over.
-      rm "$target"
-      cp -R "$src/$name" "$target"
-      echo "  installed $name (replaced symlink)"
       kept+=("$name")
     elif [ -e "$target" ]; then
       echo "  skipped   $name — $target exists and isn't ours" >&2
@@ -99,7 +106,7 @@ for dest in "${DESTS[@]}"; do
   done
 
   for name in $previous; do
-    if ! printf '%s\n' "${names[@]}" | grep -qx "$name"; then
+    if ! printf '%s\n' ${names[@]+"${names[@]}"} | grep -qx "$name"; then
       rm -rf "${dest:?}/$name"
       echo "  removed   $name"
     fi

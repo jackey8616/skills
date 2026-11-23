@@ -1,4 +1,6 @@
-Agent skills, written from scratch. Markdown only.
+Agent skills, written from scratch. Markdown, plus `install.sh` and its tests.
+
+Test: `bash tests/install.test.sh` — offline, run it after any change to `install.sh`.
 
 ## Layout
 

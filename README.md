@@ -22,7 +22,13 @@ Uninstall:
 curl -fsSL https://raw.githubusercontent.com/jackey8616/skills/main/install.sh | bash -s -- --uninstall
 ```
 
-The installer only touches skills it installed. A directory of the same name that it didn't create is skipped, never overwritten.
+The installer only touches skills it installed, with one exception: a symlink at a skill's path (a hand-linked dev checkout) is replaced with a copy. A real directory of the same name that it didn't create is skipped, never overwritten.
+
+Test the installer (offline, throwaway `$HOME`):
+
+```bash
+bash tests/install.test.sh
+```
 
 ## Skills
 
