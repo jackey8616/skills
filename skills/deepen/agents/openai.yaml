@@ -1,5 +1,5 @@
 interface:
   display_name: "Deepen"
-  short_description: "Deepen a question with methods from several fields"
+  short_description: "Rewrite a prompt deeper, not bigger"
 policy:
   allow_implicit_invocation: false
