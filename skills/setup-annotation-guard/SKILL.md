@@ -43,7 +43,7 @@ Files ast-grep has no grammar for (TOML, Makefile, Dockerfile, …) can't be gua
 
 Code embedded in another language is a separate case:
 
-- `<script>` and `<style>` in HTML are guarded. A JavaScript or CSS rule reaches them in `.html` files, and `-U` cleans them. Write those rules for a repo with HTML even if it has no `.js` or `.css` files.
+- `<script>` and `<style>` in HTML are guarded. In `.html` files the JavaScript rule reaches `<script>`, the TypeScript rule reaches `<script lang="ts">`, and the CSS rule reaches `<style>`; `-U` cleans them. Write those rules for a repo with HTML even if it has no `.js`, `.ts`, or `.css` files.
 - Code inside a string is invisible: a YAML `run: |` block is a YAML string, so the shell comments in it are never seen. The same goes for SQL in string literals. Find them by hand (`git grep -n` for `run: |` and the like), and extract every comment in them now into `<scratchpad>/comments-embedded.jsonl`: one object per comment with its file, line, and full text. Do it before section 4 edits any of those files, so the record doesn't depend on line numbers that will shift. Section 5 reads this file with the others, and removes each comment by its text.
 
 Unparseable files and invisible embedded code both go in the reply under Unguarded. Whether their existing comments go is the user's call (Ask once). Run section 2's directive check over them too: unguarded files hold tool directives like any other (`--> statement-breakpoint` in a Drizzle migration, `-- +goose Up`, `# syntax=docker/dockerfile:1`), and removing one breaks the tool. Migrations are better left alone entirely.
@@ -58,7 +58,7 @@ ast-grep scan --no-ignore hidden --globs '!.git' --inline-rules '{id: c, languag
 
 By default ast-grep skips hidden directories, so `.github/workflows` and the like would never be seen. `--no-ignore hidden` brings them in, and `--globs '!.git'` keeps git's own directory out. `.gitignore` is still honoured. Every `ast-grep scan` in this skill takes the same two flags.
 
-The groups that recur with a fixed prefix are the candidate directives. Everything else is prose.
+The groups that recur with a fixed prefix are the candidate directives. Everything else is prose. Write down the count of each kind now — line comments, block comments, doc comments (JSDoc, `///`), Python docstrings, each directive group — so the questions below quote real numbers.
 
 Also find what must be skipped entirely: generated files (a `Code generated … DO NOT EDIT.` or `@generated` header), vendored code (`vendor/`, `third_party/`), anything a generator rewrites, and test inputs captured from outside: fixtures, snapshots (`__snapshots__/`, `*.snap`), saved HTML pages, recorded API responses (cassettes, `*.har`), golden files. Changing a captured input changes what the test checks; an HTML fixture's `<script>` is reached by the JavaScript rule and `-U` would rewrite it. All of these keep their comments and go in `ignores`.
 
@@ -92,11 +92,13 @@ Every `<slot>` above is a place prose could hide: `#!/usr/bin/env do-not-touch-t
 
 ### Ask once
 
-Batch these four into one question for the user (one AskUserQuestion call; it takes four at most), after the inventory and before writing rules. The only other question comes in section 7, about the facts.
+Batch these into one AskUserQuestion call, after the inventory and before writing rules. It takes four questions at most, and there are four here. Skip a question the inventory already answers: no unguarded comments, no unknown directives. Python docstrings and doc comments are one question, not two. Still more than four → don't ask about pinning; pin an exact version in CI only, at the version the inventory used, and say so in the reply. The only other question is the facts one at the end of section 5.
 
 - **Docstrings and doc comments.** Python docstrings are strings, not comments, so `kind: comment` misses them. JSDoc, rustdoc `///`, and Go doc comments are comments, and the rule removes them. Ban both by default. The cost: editors lose the hover text on those functions. Keep them only if the repo builds API docs from them (Sphinx, mkdocstrings, pdoc, TypeDoc, rustdoc config present) or the user wants the hover text; then add an exception for the doc-comment form, limited to the paths the user names.
 - **Unguarded comments.** Show the count by file type from section 1: unparseable files, and code embedded in strings. Ask whether to remove them once by hand or leave them. Nothing will keep them out later either way. Config files often hold the repo's most useful comments; say so if that's what you found.
 - **Directives the inventory found that aren't in the table above.** Show each, with a count and one example, and ask which a tool actually reads.
+
+Not a question: a directive in the table whose tool isn't configured in this repo (`eslint-disable-next-line` with no ESLint). Section 2 already decides it: it goes with the other comments. List each such group in the reply.
 - **How to pin ast-grep** in this repo: a dev dependency (`@ast-grep/cli` in npm, `ast-grep-cli` in pip), or a pinned install in CI only. Pin an exact version; node kind names can change between releases. A version other than the one used for the inventory → re-run section 1's probe on it before writing rules.
 
 ## 3. Write the rules
@@ -142,7 +144,7 @@ rule:
 fix: ''
 ```
 
-`ignores` applies only to the rule it's written in. A file reached by several rules needs the path in each: an `.html` fixture is scanned by the HTML, JavaScript, and CSS rules, so all three list it.
+`ignores` applies only to the rule it's written in. A path goes in every rule that reaches files there, and only those: a rule reaches its own language's files, and the HTML, JavaScript, TypeScript, and CSS rules all reach `.html` files (section 1). So an `.html` fixture directory goes in all four of those rules, if the repo has them; a Python rule never needs it.
 
 A language with no exceptions drops the `not:` block. The rule files hold no comments of their own. They live in the repo, and an example comment there is the first thing the next agent copies.
 
@@ -211,7 +213,7 @@ No lint command in the repo → create one where the repo keeps its commands (a 
 
 ### Read them first
 
-Before anything is deleted, read every comment in the section 1 dumps. A comment that holds a fact the code doesn't — a non-obvious unit, an external constraint, a known bug — is a finding. List it with a suggested home: a name, a type, a test, a doc, or an issue. Don't keep it as a comment.
+Before anything is deleted, read every comment the cleanup will remove: the section 1 dumps, plus the unguarded ones only if the user chose to remove them. Comments that stay aren't sorted. Read each in context from `git show HEAD:<path>`, not the working tree: section 4 has already edited some files (the CI workflow), and the line numbers in the dumps are `HEAD`'s. A comment that holds a fact the code doesn't — a non-obvious unit, an external constraint, a known bug — is a finding. List it with a suggested home: a name, a type, a test, a doc, or an issue. Don't keep it as a comment.
 
 Comments go stale; that's why they're being removed. So check each fact against the code as it is now before it goes anywhere. Still true → keep it. No longer true → drop it, and list it in the reply as stale.
 
@@ -221,9 +223,21 @@ Sort each fact by where it belongs:
 - **Code**: a name, a constant, a type, or a test would say it. → An issue, or a follow-up change. Not part of this cleanup.
 - **Already said**: a test or a name says it now. → Drop it.
 
-Hundreds of comments → split the JSONL dumps into chunks and hand each to a subagent. Its brief is this subsection, plus section 2's rule with this repo's answer: a comment is a directive only if its tool is configured here, and the configured tools are <list>. Without that, a subagent will call an `eslint-disable` essential in a repo that doesn't run ESLint. Ask each for `path:line`, the comment, its category, and its home. Merge their lists.
+Docs that the code contradicts turn up while doing this — a README count that's wrong, a vendor note about behaviour that changed. They aren't comments, so they fit none of the three; list them as stale docs.
+
+Hundreds of comments → split the JSONL dumps into chunks and hand each to a subagent. Keep each file's comments in one chunk, so the subagent sees them together and can merge related ones; balance chunks by text size. Its brief is this subsection, plus section 2's rule with this repo's answer: a comment is a directive only if its tool is configured here, and the configured tools are <list>. Without that, a subagent will call an `eslint-disable` essential in a repo that doesn't run ESLint. Ask each for `path:line`, the comment, its category, and its home. Merge their lists.
 
 Thousands of comments → before the subagents, make one quick pass that drops comments that only restate the line below them (`// increment i`), and hand the rest on.
+
+Now ask the user where the facts go, as its own question, per category: prose facts into the docs in this change, or listed only; code facts filed as issues, or listed only; stale docs fixed in this change, or listed only. Already-said facts are dropped without asking. Asking here, before anything is removed, means the cleanup's diff and the reply describe the final state.
+
+Writing prose facts into docs:
+
+- Every sentence traces to a removed comment or to code. Keep the source next to it while writing.
+- Add nothing the source doesn't say. "Old URLs redirect to new ones" stays that; "via a Cloudflare rule" is a guess unless the repo says so.
+- A fact you can't check against the code goes in as written in the comment, marked to confirm, and is listed in the reply.
+
+The same rules bind a subagent that writes them; put them in its brief.
 
 ### Remove them
 
@@ -250,7 +264,8 @@ All must hold. Report each with its evidence:
 - Build, typecheck, lint, and test give the same results as the section 0 baseline. A difference means a removed comment was a directive. Find it, add it to the exceptions, restore it, and re-run. A lint command this skill created has no baseline; report it as absent before, passing after.
 - `ast-grep test --skip-snapshot-tests` passes.
 - The full lint command from section 4 passes on the cleaned repo.
-- The guard catches the file-level bypass: put a comment containing `ast-grep-ignore`, a blank line, and another comment in a new, unstaged file in the repo, run the repo's lint target (not the bare command), confirm it fails, and delete the file.
+- The guard catches the file-level bypass: put a comment containing `ast-grep-ignore`, a blank line, and another comment in a new, unstaged file in the repo, and run the repo's lint target (not the bare command). An exit code alone proves nothing; it could fail for another reason. It must fail with `git grep` printing that file's line. Then delete the `ast-grep-ignore` line from the same file and run it again: now the scan must report the other comment. Delete the file.
+- Rule tests check one language at a time, so they can't show HTML being reached. If the repo has HTML: put a new `.html` file with a comment in `<script>` and one in `<style>` in a guarded directory, run the lint target, confirm the scan reports both, and delete the file.
 
 A check that can't run → say so and name what's missing. Don't call the setup done.
 
@@ -261,7 +276,7 @@ Don't commit. Leave everything in the working tree, and recommend two commits: t
 - A file changed by both (a CI workflow that lost comments and gained the lint step) needs its hunks split. Interactively, `git add -p`. Without a terminal: take the guard's lines out of the file, stage it with the cleanup and commit, put the lines back, then stage and commit the guard.
 - The cleanup commit belongs in `.git-blame-ignore-revs` only if it survives merging. A squash merge folds both commits into one, and ignoring that hides the guard too. Squash-only repo → merge this one with a rebase or merge commit, or skip `.git-blame-ignore-revs`.
 
-The facts from section 5 need a home before the change ships, or they're lost with the comments. Ask the user, as its own question, per category: prose facts into the docs in this change, or listed only; code facts filed as issues, or listed only. Already-said facts are dropped without asking.
+Report where each fact went, per the user's answer in section 5. More than about 30 facts → the reply gives the count per category and the most important few; write the full table to a file in your scratchpad and give its path.
 
 ```
 ## Annotation guard — <repo>
@@ -284,12 +299,23 @@ ast-grep <version>, pinned via <how>
 | Check | Before | After |
 | ----- | ------ | ----- |
 
-## Facts that need a home
+## Facts
+<n> prose → <docs | listed>, <n> code → <issues | listed>, <n> already said, dropped.
+
 | Category | `path:line` | Removed comment | Home |
 | -------- | ----------- | --------------- | ---- |
 | prose / code | | | <doc, or name, constant, type, test, issue> |
 
-<n> already said by a test or name, dropped.
+Over ~30: the most important few here, the full table at <scratchpad path>.
+
+## To confirm
+- <doc file> — <sentence written from a fact the code couldn't confirm>
+
+## Directives removed, tool not configured
+- <directive> — <count> — <tool missing>
+
+## Stale docs
+- <doc file:line> — <what it says> — <what the code does> — <fixed | listed>
 
 ## Stale facts dropped
 - `path:line` — <removed comment> — <what the code does now>
