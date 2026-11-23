@@ -182,7 +182,7 @@ Different → Codex touched the codebase. Stop the loop. Show the user what chan
    - **Cannot determine** → tests couldn't run. Stop and tell the user what's missing.
    - Every finding disputed, nothing fixed → stop and hand the dispute to the user.
 
-After round 3, don't send round 4 on your own. Report where things stand and ask the user whether to continue. Ask again after each further round.
+Run at most 10 rounds. After round 10, stop whatever the verdict, and report where things stand. The user can ask for more.
 
 Don't commit or push. The changes stay in the working tree for the user.
 
