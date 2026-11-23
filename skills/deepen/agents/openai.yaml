@@ -1,0 +1,5 @@
+interface:
+  display_name: "Deepen"
+  short_description: "Rewrite a prompt deeper, not bigger"
+policy:
+  allow_implicit_invocation: false
