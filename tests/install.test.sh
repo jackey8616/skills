@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tests for install.sh. Offline: each case installs from a local tarball
-# into a throwaway $HOME, piping the script through bash like `curl | bash`.
+# Tests for install.sh. Offline: a fake GitHub on file:// serves the API and
+# tarballs, so the real download path runs. Each case installs into a
+# throwaway $HOME, piping the script through bash like `curl | bash`.
 #
 #   bash tests/install.test.sh
 set -uo pipefail
@@ -9,31 +10,52 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
+REPO="jackey8616/skills"
+GH="$WORK/github"
+mkdir -p "$GH/api/repos/$REPO/commits" "$GH/codeload/$REPO/tar.gz"
+
 pass=0
 fail=0
 ok()   { pass=$((pass + 1)); echo "  ok   $1"; }
 bad()  { fail=$((fail + 1)); echo "  FAIL $1"; }
 check() { if eval "$2"; then ok "$1"; else bad "$1"; fi; }
 
-# archive <name> <skill>... — a tarball shaped like GitHub's, holding
-# skills/<skill>/SKILL.md for each skill given.
-archive() {
-  local name="$1"; shift
-  local dir="$WORK/src-$name/skills-test"
+# sha_of <name> — a stable fake 40-char commit sha.
+sha_of() { printf '%s' "$1" | shasum | cut -c1-40; }
+
+# tarball <sha> <name> <skill>... — serve a GitHub-shaped tarball at
+# codeload/<repo>/tar.gz/<sha>, holding skills/<skill>/SKILL.md.
+tarball() {
+  local sha="$1" name="$2"; shift 2
+  local dir="$WORK/src-$name/skills-$sha"
   mkdir -p "$dir/skills"
   for skill in "$@"; do
     mkdir -p "$dir/skills/$skill"
     echo "$skill from $name" > "$dir/skills/$skill/SKILL.md"
   done
-  tar -czf "$WORK/$name.tar.gz" -C "$WORK/src-$name" skills-test
-  echo "$WORK/$name.tar.gz"
+  tar -czf "$GH/codeload/$REPO/tar.gz/$sha" -C "$WORK/src-$name" "skills-$sha"
 }
 
-# run <archive> [args...] — install into $H, output in $OUT, exit code in $RC.
+# resolve <ref> <sha> — the API answers <ref> with <sha>.
+resolve() { printf '%s' "$2" > "$GH/api/repos/$REPO/commits/$1"; }
+
+# archive <name> <skill>... — publish ref <name> at commit sha_of(<name>).
+# Prints the ref.
+archive() {
+  local name="$1"; shift
+  tarball "$(sha_of "$name")" "$name" "$@"
+  resolve "$name" "$(sha_of "$name")"
+  echo "$name"
+}
+
+# run <ref> [args...] — install <ref> into $H against the fake GitHub.
+# Output in $OUT, exit code in $RC.
 run() {
-  local arc="$1"; shift
+  local ref="$1"; shift
   RC=0
-  OUT="$(HOME="$H" SKILLS_ARCHIVE="$arc" bash -s -- "$@" < "$ROOT/install.sh" 2>&1)" || RC=$?
+  OUT="$(HOME="$H" SKILLS_REF="$ref" \
+    SKILLS_API="file://$GH/api" SKILLS_CODELOAD="file://$GH/codeload" \
+    bash -s -- "$@" < "$ROOT/install.sh" 2>&1)" || RC=$?
 }
 
 newhome() { H="$WORK/home-$1"; mkdir -p "$H/.claude/skills" "$H/.agents/skills"; }
@@ -114,6 +136,39 @@ run "$V1" --uninstall
 check "removes owned skills" '[ ! -e "$(C)/alpha" ] && [ ! -e "$(A)/beta" ]'
 check "removes manifest" '[ ! -e "$(C)/.jackey8616-skills" ]'
 check "leaves foreign dirs" '[ -d "$(C)/other" ]'
+
+echo "ref resolution"
+newhome ref
+PIN_SHA="$(sha_of pinned)"
+archive pinned alpha >/dev/null
+run pinned
+check "downloads by the resolved commit, not the ref" \
+  '[ "$RC" -eq 0 ] && [ ! -e "$GH/codeload/$REPO/tar.gz/pinned" ] && [ -f "$(C)/alpha/SKILL.md" ]'
+check "reports the short commit" 'grep -q "@ ${PIN_SHA:0:7} " <<<"$OUT"'
+check "records the full commit in the manifest" 'grep -qx "# $REPO @ $PIN_SHA" "$(C)/.jackey8616-skills"'
+
+echo "default ref"
+newhome default
+archive main beta >/dev/null
+run ""
+check "installs main when SKILLS_REF is unset" \
+  '[ "$RC" -eq 0 ] && [ "$(cat "$(C)/beta/SKILL.md")" = "beta from main" ]'
+
+echo "API unreachable"
+newhome noapi
+tarball v9 v9 alpha
+run v9
+check "falls back to downloading by the ref" \
+  '[ "$RC" -eq 0 ] && [ "$(cat "$(C)/alpha/SKILL.md")" = "alpha from v9" ]'
+check "reports the ref" 'grep -q "@ v9 " <<<"$OUT"'
+
+echo "unknown ref"
+newhome unknown
+run "$V1"
+run nope
+check "fails" '[ "$RC" -ne 0 ] && grep -q "could not download $REPO@nope" <<<"$OUT"'
+check "leaves the existing install alone" \
+  '[ -f "$(C)/alpha/SKILL.md" ] && owns "$(C)" alpha && grep -qx "# $REPO @ $(sha_of v1)" "$(C)/.jackey8616-skills"'
 
 echo "bad option"
 newhome badopt

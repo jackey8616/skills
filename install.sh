@@ -12,12 +12,15 @@
 # never touched.
 #
 # Env:
-#   SKILLS_REF      branch, tag, or commit to install (default: main)
-#   SKILLS_ARCHIVE  local .tar.gz to install from instead of GitHub (tests)
+#   SKILLS_REF       branch, tag, or commit to install (default: main)
+#   SKILLS_API       GitHub API base (default: https://api.github.com; tests)
+#   SKILLS_CODELOAD  tarball base (default: https://codeload.github.com; tests)
 set -euo pipefail
 
 REPO="jackey8616/skills"
 REF="${SKILLS_REF:-main}"
+API="${SKILLS_API:-https://api.github.com}"
+CODELOAD="${SKILLS_CODELOAD:-https://codeload.github.com}"
 DESTS=("$HOME/.claude/skills" "$HOME/.agents/skills")
 MANIFEST=".jackey8616-skills"
 
@@ -49,16 +52,14 @@ fi
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
-if [ -n "${SKILLS_ARCHIVE:-}" ]; then
-  sha="local"
-  tar -xzf "$SKILLS_ARCHIVE" -C "$tmp"
-else
-  # Pin the ref to a commit so every destination gets the same tree.
-  sha="$(curl -fsSL -H 'Accept: application/vnd.github.sha' \
-    "https://api.github.com/repos/$REPO/commits/$REF" 2>/dev/null || true)"
-  [ -n "$sha" ] || sha="$REF"
-  curl -fsSL "https://codeload.github.com/$REPO/tar.gz/$sha" | tar -xz -C "$tmp"
-fi
+# Pin the ref to a commit so every destination gets the same tree. If the API
+# is unreachable (rate limit, outage), download by the ref itself.
+sha="$(curl -fsSL -H 'Accept: application/vnd.github.sha' \
+  "$API/repos/$REPO/commits/$REF" 2>/dev/null || true)"
+[ -n "$sha" ] || sha="$REF"
+
+curl -fsSL "$CODELOAD/$REPO/tar.gz/$sha" 2>/dev/null | tar -xz -C "$tmp" 2>/dev/null \
+  || { echo "error: could not download $REPO@$REF" >&2; exit 1; }
 src="$(echo "$tmp"/*/skills)"
 [ -d "$src" ] || { echo "error: no skills/ in $REPO@$sha" >&2; exit 1; }
 
