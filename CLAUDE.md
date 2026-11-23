@@ -25,6 +25,16 @@ interface:
 #   allow_implicit_invocation: false
 ```
 
+## Add, rename, remove a skill
+
+Update the skill table in `README.md` in the same change.
+
+## Install
+
+`install.sh` downloads a tarball of `main` and copies skills in — no clone, no symlinks. Upgrades are explicit: the user re-runs it. Don't add auto-update.
+
+Installed skills are copies of `main`, not of your checkout. To try a skill from a branch, run the installer with `SKILLS_REF=<branch>`, or symlink the skill dir by hand — the next install replaces that symlink.
+
 ## Gotchas
 
 `AGENTS.md` symlinks to this file. Edit here, both harnesses follow.
