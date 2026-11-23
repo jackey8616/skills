@@ -80,7 +80,7 @@ Then: "Review again from scratch; don't trust the lists above."
 
 ## 3. Herdr mode
 
-The reviewer is a Codex agent named `reviewer-<workspace-id>`, e.g. `reviewer-w9`. Agent names are unique across the whole Herdr server, so the workspace suffix is required.
+The reviewer is a Codex agent named `reviewer-<id>`, where `<id>` is the workspace id in lowercase: `reviewer-w9`, and `reviewer-w1m` for workspace `w1M`. Herdr rejects uppercase in agent names (`invalid_agent_name`). Agent names are unique across the whole Herdr server, so the workspace suffix is required.
 
 ### Find or start it
 
@@ -92,7 +92,7 @@ Look for the name in `herdr agent list`.
 
   ```bash
   herdr tab create --workspace "$HERDR_WORKSPACE_ID" --label reviewer --cwd "$PWD" --no-focus
-  herdr agent start reviewer-<workspace-id> --kind codex --pane <.result.root_pane.pane_id> \
+  herdr agent start reviewer-<id> --kind codex --pane <.result.root_pane.pane_id> \
     -- -s workspace-write -c sandbox_workspace_write.network_access=true -a never
   ```
 
@@ -107,16 +107,16 @@ With approvals off, what's left is mostly Codex's one-time startup prompts. What
 1. Read the screen. While blocked, only the visible screen is readable:
 
    ```bash
-   herdr agent read reviewer-<workspace-id> --source visible
+   herdr agent read reviewer-<id> --source visible
    ```
 
 2. Show the user the question and its options verbatim, and ask which to pick. Mention they can also answer in the reviewer tab directly.
-3. Send exactly their choice (`herdr agent send-keys reviewer-<workspace-id> enter`, a digit, `esc`, …).
+3. Send exactly their choice (`herdr agent send-keys reviewer-<id> enter`, a digit, `esc`, …).
 4. Wait for Codex to move before waiting for it to settle — a bare wait returns at once if Codex is already showing its next prompt:
 
    ```bash
-   herdr agent wait reviewer-<workspace-id> --until working --timeout 10000
-   herdr agent wait reviewer-<workspace-id> --timeout 540000
+   herdr agent wait reviewer-<id> --until working --timeout 10000
+   herdr agent wait reviewer-<id> --timeout 540000
    ```
 
    Ignore a timeout on the first wait. `blocked` again → back to step 1.
@@ -124,21 +124,21 @@ With approvals off, what's left is mostly Codex's one-time startup prompts. What
 ### Send a round
 
 ```bash
-herdr agent prompt reviewer-<workspace-id> "$(cat <tmp>/codex-review-prompt-<n>.md)" --wait --timeout 540000
+herdr agent prompt reviewer-<id> "$(cat <tmp>/codex-review-prompt-<n>.md)" --wait --timeout 540000
 ```
 
 The `$(cat …)` output isn't expanded again, so the `$` survives.
 
 - Returns `agent_blocked` before sending → relay, then send again.
 - Settles `blocked` → relay, until it settles `idle` or `done`.
-- `timeout` → `herdr agent wait reviewer-<workspace-id> --timeout 540000` again. Never resubmit: a timeout doesn't mean the prompt wasn't delivered.
+- `timeout` → `herdr agent wait reviewer-<id> --timeout 540000` again. Never resubmit: a timeout doesn't mean the prompt wasn't delivered.
 
 ### Read the report
 
 Only once the agent is `idle` or `done`:
 
 ```bash
-herdr agent read reviewer-<workspace-id> --source recent-unwrapped --lines 400 > <tmp>/codex-review-<n>.txt
+herdr agent read reviewer-<id> --source recent-unwrapped --lines 400 > <tmp>/codex-review-<n>.txt
 ```
 
 The report starts at the last line containing `## Verdict` — Codex's UI may prefix it, e.g. `• ## Verdict`. It ends before the status line (`Worked for …`) or the input prompt. No such line → read with more lines once; still none → show the user the tail and stop.
@@ -215,4 +215,4 @@ The reviewer tab stays open after the loop — the user may send more rounds. Wh
 herdr tab close <reviewer tab id>
 ```
 
-Find the tab id from `herdr agent get reviewer-<workspace-id>`. Never close it unasked.
+Find the tab id from `herdr agent get reviewer-<id>`. Never close it unasked.
