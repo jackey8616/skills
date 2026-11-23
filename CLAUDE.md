@@ -1,6 +1,9 @@
-Agent skills, written from scratch. Markdown, plus `install.sh` and its tests.
+Agent skills, written from scratch. Markdown, plus a few shell scripts and their tests.
 
-Test: `bash tests/install.test.sh` — offline, run it after any change to `install.sh`.
+Tests are offline. Run the one for whatever you changed:
+
+- `bash tests/install.test.sh` — `install.sh`
+- `bash tests/detect.test.sh` — `skills/codex-review/scripts/detect.sh`
 
 ## Layout
 

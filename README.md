@@ -37,4 +37,4 @@ User-invoked — type the name to run it.
 | Skill | What it does |
 | ----- | ------------ |
 | [`test-first-code-review`](skills/test-first-code-review/SKILL.md) | Review a fix by running its tests first, then reading the code. Never touches the codebase. |
-| [`codex-review`](skills/codex-review/SKILL.md) | Claude implements, Codex reviews with `test-first-code-review`, Claude fixes; up to three rounds. Uses a Herdr reviewer tab when available. |
+| [`codex-review`](skills/codex-review/SKILL.md) | Claude implements, Codex reviews with `test-first-code-review`, Claude fixes; up to ten rounds. Uses a Herdr reviewer tab when available. |
