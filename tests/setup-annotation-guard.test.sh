@@ -118,7 +118,7 @@ pos_case() {
   printf '%s\n' "$3" > "$WORK/pos.py"
   local got
   got="$(ast-grep scan -r "$WORK/pos.yml" --json=stream "$WORK/pos.py" 2>/dev/null \
-    | sed -E 's/.*"start":\{"line":([0-9]+).*/\1/' | sort -n | paste -sd' ' -)"
+    | awk 'match($0, /"start":\{"line":[0-9]+/) { print substr($0, RSTART + 16, RLENGTH - 16) }' | sort -n | paste -sd' ' -)"
   [ "$got" = "$2" ] && ok "$1" || bad "$1" "matches on lines '$got'"
 }
 pos_case "allows a shebang, then a coding line, at the top" "" '#!/usr/bin/env python3
@@ -181,7 +181,7 @@ def conditional(x):
     ("a" if x else "b")
 EOF
 got="$(ast-grep scan -r "$WORK/doc.yml" --json=stream "$WORK/doc.py" 2>/dev/null \
-  | sed -E 's/.*"start":\{"line":([0-9]+).*/\1/' | sort -n | paste -sd' ' -)"
+  | awk 'match($0, /"start":\{"line":[0-9]+/) { print substr($0, RSTART + 16, RLENGTH - 16) }' | sort -n | paste -sd' ' -)"
 [ "$got" = "0 2 6 9 11 13" ] && ok "matches plain, concatenated, and parenthesized docstrings; not f-strings or code" \
   || bad "docstrings only" "$got"
 

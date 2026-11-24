@@ -44,7 +44,7 @@ Files ast-grep has no grammar for (TOML, Makefile, Dockerfile, …) can't be gua
 Code embedded in another language is a separate case:
 
 - `<script>` and `<style>` in HTML are guarded. In `.html` files the JavaScript rule reaches `<script>`, the TypeScript rule reaches `<script lang="ts">`, and the CSS rule reaches `<style>`; `-U` cleans them. Write those rules for a repo with HTML even if it has no `.js`, `.ts`, or `.css` files.
-- Code inside a string is invisible: a YAML `run: |` block is a YAML string, so the shell comments in it are never seen. The same goes for SQL in string literals. Find them by hand (`git grep -n` for `run: |` and the like), and extract every comment in them now into `<scratchpad>/comments-embedded.jsonl`: one object per comment with its file, line, and full text. Do it before section 4 edits any of those files, so the record doesn't depend on line numbers that will shift. Section 5 reads this file with the others, and removes each comment by its text.
+- Code inside a string is invisible: a YAML `run: |` block is a YAML string, so the shell comments in it are never seen. The same goes for SQL in string literals. Find them by hand (`git grep -n` for `run: |` and the like) and count them for Ask once. If the user chooses to remove them, extract every one into `<scratchpad>/comments-embedded.jsonl` right after Ask once: one object per comment with its file, line, and full text. That's before section 4 edits any of those files, so the record doesn't depend on line numbers that will shift. Section 5 reads this file with the others, and removes each comment by its text.
 
 Unparseable files and invisible embedded code both go in the reply under Unguarded. Whether their existing comments go is the user's call (Ask once). Run section 2's directive check over them too: unguarded files hold tool directives like any other (`--> statement-breakpoint` in a Drizzle migration, `-- +goose Up`, `# syntax=docker/dockerfile:1`), and removing one breaks the tool. Migrations are better left alone entirely.
 
@@ -99,7 +99,7 @@ Batch these into one AskUserQuestion call, after the inventory and before writin
 - **Directives the inventory found that aren't in the table above.** Show each, with a count and one example, and ask which a tool actually reads.
 
 Not a question: a directive in the table whose tool isn't configured in this repo (`eslint-disable-next-line` with no ESLint). Section 2 already decides it: it goes with the other comments. List each such group in the reply.
-- **How to pin ast-grep** in this repo: a dev dependency (`@ast-grep/cli` in npm, `ast-grep-cli` in pip), or a pinned install in CI only. Pin an exact version; node kind names can change between releases. A version other than the one used for the inventory → re-run section 1's probe on it before writing rules.
+- **How to pin ast-grep** in this repo: a dev dependency (`@ast-grep/cli` in npm, `ast-grep-cli` in pip), or a pinned install in CI only. Pin an exact version; node kind names can change between releases. Installing a dev dependency rewrites the manifest (`npm install -D -E` reflows `package.json`'s arrays); check its diff afterwards and put back any formatting change that isn't the new dependency. A version other than the one used for the inventory → re-run section 1's probe on it before writing rules.
 
 ## 3. Write the rules
 
@@ -148,7 +148,7 @@ fix: ''
 
 A language with no exceptions drops the `not:` block. The rule files hold no comments of their own. They live in the repo, and an example comment there is the first thing the next agent copies.
 
-Position-bound exceptions go in the same `not: any:` list. The Python forms; for Bash use `kind: program` in place of `module`:
+Position-bound exceptions go in the same `not: any:` list. They name the file's root node, which differs by language: `module` for Python; `program` for TypeScript, Tsx, JavaScript, Bash, and Ruby; `source_file` for Go and Rust. Another language → probe it the way section 1 probes comment kinds. The Python forms:
 
 ```yaml
 - all:
@@ -161,7 +161,16 @@ Position-bound exceptions go in the same `not: any:` list. The Python forms; for
     - not: { follows: { not: { regex: '^#!' }, stopBy: end } }
 ```
 
-The alternations are examples; use the exact shebangs and encodings the inventory found. `stopBy: neighbor` is `inside`'s default, written out because it's what makes this work: the comment's direct parent must be the file itself. With `stopBy: end`, a comment at any depth would pass. The first allows a listed shebang only when no other node precedes it. The second allows a listed coding line only at the top level, with nothing but a shebang before it.
+A TypeScript `/// <reference>` at the top of the file:
+
+```yaml
+- all:
+    - regex: '^/// <reference types="(vite/client)" />$'
+    - inside: { kind: program, stopBy: neighbor }
+    - not: { follows: { regex: '[\s\S]' } }
+```
+
+The alternations are examples; use the exact shebangs, encodings, and references the inventory found. `stopBy: neighbor` is `inside`'s default, written out because it's what makes this work: the comment's direct parent must be the file itself. With `stopBy: end`, a comment at any depth would pass. The first allows a listed shebang only when no other node precedes it. The second allows a listed coding line only at the top level, with nothing but a shebang before it.
 
 ast-grep sees nodes, not blank lines or indentation, and its `range` rule needs an exact end. So a listed shebang or coding line after blank lines still passes. It can only be one of the repo's own known values, so it carries nothing new; the position checks catch the common case, a directive after real code.
 
@@ -225,7 +234,25 @@ Sort each fact by where it belongs:
 
 Docs that the code contradicts turn up while doing this — a README count that's wrong, a vendor note about behaviour that changed. They aren't comments, so they fit none of the three; list them as stale docs.
 
-Hundreds of comments → split the JSONL dumps into chunks and hand each to a subagent. Keep each file's comments in one chunk, so the subagent sees them together and can merge related ones; balance chunks by text size. Its brief is this subsection, plus section 2's rule with this repo's answer: a comment is a directive only if its tool is configured here, and the configured tools are <list>. Without that, a subagent will call an `eslint-disable` essential in a repo that doesn't run ESLint. Ask each for `path:line`, the comment, its category, and its home. Merge their lists.
+Hundreds of comments → split the JSONL dumps into chunks and hand each to a subagent. About 130 comments a chunk works: five subagents for 700. Keep each file's comments in one chunk, so the subagent sees them together and can merge related ones; balance chunks by text size. Its brief is this subsection, plus section 2's rule with this repo's answer: a comment is a directive only if its tool is configured here, and the configured tools are <list>. Without that, a subagent will call an `eslint-disable` essential in a repo that doesn't run ESLint.
+
+Each subagent returns exactly one row per input comment, no more, no fewer:
+
+| Field | Content |
+| ----- | ------- |
+| `path:line` | as in the dump |
+| comment | the full original text, verbatim |
+| category | `prose`, `code`, `already-said`, `stale` (no longer true), or `restates` (says only what the line below says) |
+| fact | what the comment says, and nothing it doesn't |
+| inference | anything the subagent adds from the code, kept apart from the fact; empty is fine |
+| home | the doc, or the name, constant, type, test, or issue |
+
+Plus one extra row per doc the code contradicts, category `stale-doc`, keyed by the doc's `path:line`. Summaries drift: a subagent told "stateless, fine for Workers" will write "so every DB round-trip is a subrequest" unless the fact column has to stand next to the original.
+
+Merging:
+
+1. Check coverage: every comment in the dumps appears in exactly one row. A missing or doubled one goes back to its subagent.
+2. Deduplicate across chunks. Chunks split by file, but a fact often isn't: the same rule in five locale files, a limit noted in two modules, one stale doc reported by four subagents. One row per fact, listing every source `path:line`.
 
 Thousands of comments → before the subagents, make one quick pass that drops comments that only restate the line below them (`// increment i`), and hand the rest on.
 
@@ -235,7 +262,7 @@ Writing prose facts into docs:
 
 - Every sentence traces to a removed comment or to code. Keep the source next to it while writing.
 - Add nothing the source doesn't say. "Old URLs redirect to new ones" stays that; "via a Cloudflare rule" is a guess unless the repo says so.
-- A fact you can't check against the code goes in as written in the comment, marked to confirm, and is listed in the reply.
+- A fact you can't check against the code stays out of the docs. List it in the reply under To confirm, with its source; the user decides. Never publish a "to confirm" marker in the docs themselves.
 
 The same rules bind a subagent that writes them; put them in its brief.
 
@@ -271,15 +298,18 @@ A check that can't run → say so and name what's missing. Don't call the setup 
 
 ## 7. Reply
 
+The skill's own version: the installer records the commit it installed on the first line of `.jackey8616-skills`, in the directory above this skill (`# jackey8616/skills @ <sha>`). No such file (a hand-linked checkout) → `git -C "${CLAUDE_SKILL_DIR}" rev-parse --short HEAD`. Neither → say "unknown".
+
 Don't commit. Leave everything in the working tree, and recommend two commits: the cleanup (section 5) first, then the guard (sections 3–4). In that order every commit passes lint; the guard alone would fail on the comments still there. Two things to tell the user with it:
 
-- A file changed by both (a CI workflow that lost comments and gained the lint step) needs its hunks split. Interactively, `git add -p`. Without a terminal: take the guard's lines out of the file, stage it with the cleanup and commit, put the lines back, then stage and commit the guard.
+- A file changed by both needs its hunks split: a CI workflow that lost comments and gained the lint step, and a README that gained the lint command (section 4) and the prose facts (section 5). Interactively, `git add -p`. Without a terminal: take the guard's lines out of the file, stage it with the cleanup and commit, put the lines back, then stage and commit the guard.
 - The cleanup commit belongs in `.git-blame-ignore-revs` only if it survives merging. A squash merge folds both commits into one, and ignoring that hides the guard too. Squash-only repo → merge this one with a rebase or merge commit, or skip `.git-blame-ignore-revs`.
 
 Report where each fact went, per the user's answer in section 5. More than about 30 facts → the reply gives the count per category and the most important few; write the full table to a file in your scratchpad and give its path.
 
 ```
 ## Annotation guard — <repo>
+setup-annotation-guard @ <version>
 ast-grep <version>, pinned via <how>
 
 ## Rules
@@ -309,7 +339,7 @@ ast-grep <version>, pinned via <how>
 Over ~30: the most important few here, the full table at <scratchpad path>.
 
 ## To confirm
-- <doc file> — <sentence written from a fact the code couldn't confirm>
+- `path:line` — <fact as the comment states it> — <why the code couldn't confirm it>
 
 ## Directives removed, tool not configured
 - <directive> — <count> — <tool missing>
