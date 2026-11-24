@@ -197,19 +197,20 @@ for l in Tsx Html JavaScript Css; do
 done
 # A rule the repo already had: the cleanup must not apply its fix.
 printf 'id: prefer-two\nlanguage: Tsx\nseverity: error\nrule: { pattern: "const q = 1" }\nfix: "const q = 2"\n' > "$jsx/rules/prefer-two.yml"
-printf 'const o = {/* x */};\nfunction f() {/* y */}\nconst v = <div>{/* a */}<span>{x}</span>{\n  /* b */\n}</div>;\nfunction g() { return/* r */1; }\n// full line\nconst s = `a  \n`;\nconst q = 1;\n' > "$jsx/a.tsx"
-printf '<!-- h -->\n<style>a/* c */:hover {}</style>\n<script>function f() { return/*\n*/1 }</script>\n' > "$jsx/b.html"
+printf 'const o = {/* x */};\nfunction f() {/* y */}\nconst v = <div>{/* a */}<span>{x}</span>{\n  /* b */\n}</div>;\nfunction g() { return 1; } // r\n// full line\nconst s = `a  \n`;\nconst q = 1;\n' > "$jsx/a.tsx"
+printf '<!-- h -->\n<style>\n/* c */\na:hover {}\n</style>\n<script>\n// d\nf();\n</script>\n' > "$jsx/b.html"
 printf 'const v = <div>{}</div>;\n' > "$jsx/fixtures/page.tsx"
 git -C "$jsx" add -A
 git -C "$jsx" -c user.name=t -c user.email=t@t commit -qm init
-run_removal "$jsx" Tsx >/dev/null 2>"$WORK/tidy.err" || cat "$WORK/tidy.err"
+rc=0; run_removal "$jsx" Tsx >/dev/null 2>"$WORK/tidy.err" || rc=$?
+[ "$rc" -eq 0 ] && ok "tidy.py exits 0" || bad "tidy.py exits 0" "exit $rc: $(cat "$WORK/tidy.err")"
 got="$(cat "$jsx/a.tsx")"
 want="$(printf 'const o = {};\nfunction f() {}\nconst v = <div><span>{x}</span></div>;\nfunction g() { return 1; }\nconst s = `a  \n`;\nconst q = 1;')"
 [ "$got" = "$want" ] \
-  && ok "removes comments and empty JSX, keeps objects, blocks, string data; separates tokens; no other rule's fix" \
+  && ok "removes comments and empty JSX, keeps objects, blocks, string data; no other rule's fix" \
   || bad "end to end" "$(diff <(echo "$want") <(echo "$got"))"
 got="$(cat "$jsx/b.html")"
-want="$(printf '\n<style>a:hover {}</style>\n<script>function f() { return\n1 }</script>')"
+want="$(printf '<style>\na:hover {}\n</style>\n<script>\nf();\n</script>')"
 [ "$got" = "$want" ] && ok "removes HTML, CSS, and JavaScript comments from one HTML file" \
   || bad "mixed-language HTML" "$(diff <(echo "$want") <(echo "$got"))"
 [ "$(cat "$jsx/fixtures/page.tsx")" = 'const v = <div>{}</div>;' ] \

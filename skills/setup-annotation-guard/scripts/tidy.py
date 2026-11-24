@@ -6,7 +6,8 @@
 Each PASS.jsonl is the `--json=stream` output of a scan, taken just before
 the same scan ran with -U; give them in the order they ran. Their
 replacementOffsets say exactly where text was removed, so nothing is
-guessed. For each file they name, compared with its version at REV:
+guessed. For each file they name, compared with its version at REV, it
+works on lines only, in every language alike:
 
 - strips trailing whitespace a removal left at the end of a line;
 - drops lines a removal left blank or whitespace-only (a full-line comment,
@@ -14,26 +15,16 @@ guessed. For each file they name, compared with its version at REV:
   ending in a backslash, which would otherwise continue onto the next;
 - caps a blank run that a dropped line joined at the longer of the runs it
   joined, so two blank lines between Python definitions stay two;
-- removes blank lines a removal left at the top of the file;
-- puts back the whitespace a comment stood for where its removal joined
-  code, by the language's own rule (WHITESPACE below). In JavaScript and
-  TypeScript a comment holding a line terminator (LF, CR, U+2028, U+2029)
-  is a line break, and in Go one holding an LF is
-  (`return/*\n*/1` keeps its automatic semicolon); in C it is one space
-  even then, or a `#define` would end early; in CSS it separates two
-  names and is nothing otherwise (`@media/**/screen` needs its space,
-  `a/**/:hover` is `a:hover`). Elsewhere a space goes in only between two
-  non-whitespace characters, and not just inside brackets or next to `,`
-  and `;`.
-
-Cuts from HTML comments are left as -U made them: in `<pre>` every space
-and line is content. Empty JSX `{}` joins nothing.
+- removes blank lines a removal left at the top of the file.
 
 Every other line is kept byte for byte, line ending included. A file whose
 current text isn't exactly REV's with the recorded ranges removed is
-skipped and reported. A line a removal left ending in a backslash, which
-now continues onto the next line, is named for fixing by hand, and the
-exit status is 3.
+skipped and reported. Two kinds of line are named for fixing by hand, and
+the exit status is 3: one where a removal joined the code on either side
+(`return/**/1`, but not next to a bracket, comma, or semicolon), since
+what whitespace the comment stood for depends on the language, and one a removal left ending in a backslash, which now
+continues onto the next line. Empty JSX `{}` joins nothing, so its
+removal is never named.
 """
 import argparse
 import json
@@ -42,12 +33,12 @@ import sys
 from collections import defaultdict
 
 DROP = object()
-LINE, SPACE, NAMES, NOTHING, UNTOUCHED = "line", "space", "names", "nothing", "untouched"
-WHITESPACE = {"css": NAMES, "html": UNTOUCHED}
-LINE_BREAKS = {
-    "javascript": "\n\r\u2028\u2029", "typescript": "\n\r\u2028\u2029", "tsx": "\n\r\u2028\u2029",
-    "go": "\n",
-}
+
+
+class Named(str):
+    """A tidied line to fix by hand, and why."""
+
+    reason = ""
 
 
 def git(*args):
@@ -70,9 +61,10 @@ def blank(line):
     return line is DROP or not line.strip()
 
 
-def needs_space(a, b, stands_for):
-    if stands_for == NAMES:
-        return all(c.isalnum() or c in "-_" or ord(c) > 127 for c in (a, b))
+def fuses(a, b):
+    """Whether two characters a removal brought together may read as one
+    token. Brackets, commas, and semicolons are tokens of their own in every
+    language ast-grep parses."""
     return not (a.isspace() or b.isspace() or a in "([{,;" or b in ")]},;")
 
 
@@ -88,34 +80,28 @@ def load(paths):
                 offsets = match.get("replacementOffsets")
                 if offsets is None or match.get("replacement") != "":
                     continue
-                if match["ruleId"] == "empty-jsx":
-                    stands_for = NOTHING
-                else:
-                    language = match.get("language", "").lower()
-                    stands_for = WHITESPACE.get(language, SPACE)
-                    if any(c in match["text"] for c in LINE_BREAKS.get(language, "")):
-                        stands_for = LINE
-                ranges[match["file"]].append((offsets["start"], offsets["end"], stands_for))
+                joins = match["ruleId"] != "empty-jsx"
+                ranges[match["file"]].append((offsets["start"], offsets["end"], joins))
         passes.append(ranges)
     return passes
 
 
 def apply(old, passes):
     """REV's bytes with each pass's ranges removed, and where each cut landed,
-    with the whitespace its removed text stood for."""
+    with whether a cut there can join code."""
     text, points = old, []
     for ranges in passes:
         ranges = sorted(ranges)
         out, moved, pos, removed = [], [], 0, 0
-        for start, end, stands_for in ranges:
+        for start, end, joins in ranges:
             if start < pos:
                 return None, None
             out.append(text[pos:start])
-            moved.append((start - removed, stands_for))
+            moved.append((start - removed, joins))
             removed += end - start
             pos = end
         out.append(text[pos:])
-        for point, stands_for in points:
+        for point, joins in points:
             shift, landed = 0, None
             for start, end, outer in ranges:
                 if point <= start:
@@ -124,17 +110,16 @@ def apply(old, passes):
                     landed = (start - shift, outer)
                     break
                 shift += end - start
-            moved.append(landed or (point - shift, stands_for))
+            moved.append(landed or (point - shift, joins))
         text, points = b"".join(out), moved
     return text, points
 
 
-def tidy(new, points, continued):
+def tidy(new, points):
     lines = lines_of(new)
-    at = defaultdict(set)
-    for point, stands_for in points:
-        if stands_for != UNTOUCHED:
-            at[point].add(stands_for)
+    at = defaultdict(bool)
+    for point, joins in points:
+        at[point] |= joins
     out, start = [], 0
     for line in lines:
         end = start + len(line) - len(ending(line))
@@ -150,22 +135,20 @@ def tidy(new, points, continued):
         else:
             body = line[: end - start]
             tail = here[-1] - start
-            joined = False
+            reason = None
             if not body[tail:].strip():
                 body = body[:tail].rstrip()
-                joined = body.endswith("\\")
-            indent = body[: len(body) - len(body.lstrip())]
-            for p in reversed(here):
+                if body.endswith("\\"):
+                    reason = "a removal left it ending in a backslash"
+            for p in here:
                 i = p - start
-                if i >= len(body) or not body[:i].strip() or at[p] == {NOTHING}:
-                    continue
-                if LINE in at[p]:
-                    body = body[:i].rstrip() + (ending(line) or "\n") + indent + body[i:].lstrip()
-                elif any(needs_space(body[i - 1], body[i], w) for w in at[p] - {NOTHING}):
-                    body = body[:i] + " " + body[i:]
-            out.append(body + ending(line))
-            if joined:
-                continued.append(out[-1])
+                if at[p] and 0 < i < len(body) and fuses(body[i - 1], body[i]):
+                    reason = "a removal joined the code on either side"
+            if reason:
+                out.append(Named(body + ending(line)))
+                out[-1].reason = reason
+            else:
+                out.append(body + ending(line))
         start += len(line)
     return out
 
@@ -218,16 +201,15 @@ def main():
                 print(f"skipped  {path} (not {args.base} minus the recorded removals)", file=sys.stderr)
                 continue
             new = current.decode("utf-8")
-            points = [(len(current[:p].decode("utf-8")), stands_for) for p, stands_for in byte_points]
+            points = [(len(current[:p].decode("utf-8")), joins) for p, joins in byte_points]
         except (subprocess.CalledProcessError, UnicodeDecodeError, FileNotFoundError):
             print(f"skipped  {path}", file=sys.stderr)
             continue
         old_lines = lines_of(old.decode("utf-8", errors="replace"))
-        continued = []
-        tidied = collapse(tidy(new, points, continued), old_lines)
+        tidied = collapse(tidy(new, points), old_lines)
         for n, line in enumerate(tidied, 1):
-            if any(line is c for c in continued):
-                print(f"check    {path}:{n} (a removal left it ending in a backslash)", file=sys.stderr)
+            if isinstance(line, Named):
+                print(f"check    {path}:{n} ({line.reason})", file=sys.stderr)
                 status = 3
         if "".join(tidied) != new:
             with open(path, "w", encoding="utf-8", newline="") as f:

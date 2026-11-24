@@ -194,76 +194,20 @@ expect "keeps string data a nearby removal repeats" n.js \
 `
 */'
 
-expect "puts a space back where a comment separated two tokens" o.js \
-'return/* x */1;
-foo(/* a */1);
-a -/* b */-c;
-' \
-'return 1;
-foo(1);
-a - -c;
-' '/* x */' '/* a */' '/* b */'
-
-expect "puts a line break back where a comment held one" s.js \
-'function f() { return/*
-comment
-*/1; }
-  x = 1; /* a
-  b */ y = 2;
-' \
-'function f() { return
-1; }
-  x = 1;
-  y = 2;
-' '/*
-comment
-*/' '/* a
-  b */'
-
-expect "puts a space back before punctuation that would join" t.c \
-'#define F/**/(x)
-int a = 1/* x */.5;
-#define VALUE (1 /* x
-y */ + 2)/* z
-*/int b;
-' \
-'#define F (x)
-int a = 1 .5;
-#define VALUE (1  + 2) int b;
-' '/**/' '/* x */' '/* x
-y */' '/* z
-*/'
-
-expect "in CSS, puts a space back only between two names" v.css \
-'a/* x */:hover { color: red; }
-@media/* y */screen { a { color: red; } }
-' \
-'a:hover { color: red; }
-@media screen { a { color: red; } }
-' '/* x */' '/* y */'
-
 expect "splits lines at LF only, so a U+2028 isn't stripped as trailing space" x.js \
 "$(printf 'a = 1 /* d */\xe2\x80\xa8b = 2\nconst s = "a\xe2\x80\xa8b  "; // c\n')" \
 "$(printf 'a = 1 \xe2\x80\xa8b = 2\nconst s = "a\xe2\x80\xa8b  ";\n')" '/* d */' '// c'
 
-expect "counts every JavaScript line terminator as a line break" w.js \
-"$(printf 'function f() { return/*\r*/1; }\nfunction g() { return/*\xe2\x80\xa8*/1; }\n')" \
-"$(printf 'function f() { return\n1; }\nfunction g() { return\n1; }\n')" \
-"$(printf '/*\r*/')" "$(printf '/*\xe2\x80\xa8*/')"
-
-expect "leaves HTML whitespace as -U made it" u.html \
-'<pre>a  <!-- note -->
-b</pre>
+expect "drops a line an HTML comment filled, like any other" u.html \
+'<head>
+··<!-- note -->
+··<meta charset="UTF-8" />
+</head>
 ' \
-'<pre>a··
-b</pre>
+'<head>
+··<meta charset="UTF-8" />
+</head>
 ' 'no-comments-html::<!-- note -->'
-
-expect "joins text an HTML comment split" p.html \
-'<p>a<!-- x -->b</p>
-' \
-'<p>ab</p>
-' 'no-comments-html::<!-- x -->'
 
 expect "follows a cut through a second pass (empty JSX)" q.tsx \
 'const e = <b>a{/* x */}b</b>;
@@ -303,11 +247,6 @@ else
   bad "tidies the removal, keeps the earlier hard line break" "exit $rc: $(od -c < "$WORK/README.md" | head -2)"
 fi
 
-expect "Go: only an LF in a comment is a line break" y.go \
-"$(printf 'func f() int { return/*\r*/1 }\nfunc g() int { return/*\n*/1 }\n')" \
-"$(printf 'func f() int { return 1 }\nfunc g() int { return\n1 }\n')" \
-"$(printf '/*\r*/')" "$(printf '/*\n*/')"
-
 expect "keeps the empty line that ends a line continuation" aa.sh \
 'echo start \
 # explanation
@@ -329,6 +268,20 @@ if [ "$rc" -eq 3 ] && echo "$out" | grep -q '^check    z.c:1 ' && ! echo "$out" 
   ok "exit 3, the new continuation named, an existing one left alone"
 else
   bad "names a new line continuation" "exit $rc: $out"
+fi
+
+echo "a removal that joins code is named, and left as -U made it"
+printf 'function f() { return/* x */1; }\nfoo(/* a */1);\nconst e = <b>a{/* y */}b</b>;\n' > "$WORK/jn.tsx"
+git -C "$WORK" add jn.tsx
+git -C "$WORK" commit -qm jn
+(cd "$WORK" && remove jn.tsx cuts-jn '/* x */' '/* a */' 'no-comments-tsx::/* y */' '||' 'empty-jsx::{}' >/dev/null)
+rc=0
+out="$(cd "$WORK" && python3 "$TIDY" --base HEAD cuts-jn.0.jsonl cuts-jn.1.jsonl 2>&1)" || rc=$?
+if [ "$rc" -eq 3 ] && echo "$out" | grep -q '^check    jn.tsx:1 (a removal joined' && ! echo "$out" | grep -q 'jn.tsx:[23] ' \
+  && [ "$(cat "$WORK/jn.tsx")" = "$(printf 'function f() { return1; }\nfoo(1);\nconst e = <b>ab</b>;')" ]; then
+  ok "exit 3, return1 named; foo(1) and the JSX text {} joined are not"
+else
+  bad "names a removal that joins code" "exit $rc: $out"
 fi
 
 echo "a file the cuts don't explain is skipped"
