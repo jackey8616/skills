@@ -175,30 +175,51 @@ const a = 1;
 ref_case "flags an unlisted reference at the top" "0" '/// <reference types="other" />
 const a = 1;'
 
-echo "empty JSX expressions"
-jsx_cmd="$(grep -m1 'id: empty-jsx' "$SKILL" | sed 's/<Tsx|JavaScript>/Tsx/')"
-[ -n "$jsx_cmd" ] || bad "empty-jsx command found in SKILL.md" "nothing"
+echo "removal pairs and tidy, end to end"
+removal="$(awk '/One rule per pair/{f=1} f && /^```bash/{g=1; next} g && /^```/{exit} g' "$SKILL")"
+tidy_cmd="$(grep -m1 'scripts/tidy.py" --base' "$SKILL")"
+[ -n "$removal" ] && [ -n "$tidy_cmd" ] || bad "removal block and tidy command found in SKILL.md" "nothing"
+# run_removal <repo> <langs> — SKILL.md's removal block, then its tidy command.
+run_removal() {
+  local snap langs="$2"; snap="$(git -C "$1" stash create)"; snap="${snap:-HEAD}"
+  sub() { echo "$1" | sed -e "s|<snap>|$snap|g" -e "s|<scratchpad>|$WORK/cuts|g" -e "s|<Tsx JavaScript>|$langs|g" \
+    -e "s|\${CLAUDE_SKILL_DIR}|$ROOT/skills/setup-annotation-guard|g"; }
+  mkdir -p "$WORK/cuts"
+  (cd "$1" && bash -c "$(sub "$removal")" >/dev/null 2>&1; bash -c "$(sub "$tidy_cmd")")
+}
 jsx="$WORK/jsx"
-mkdir -p "$jsx/fixtures"
+mkdir -p "$jsx/fixtures" "$jsx/rules"
 git -C "$jsx" init -q
-printf 'const o = {/* x */};\nfunction f() {/* y */}\nconst v = <div>{/* a */}<span>{x}</span>{\n  /* b */\n}</div>;\n' > "$jsx/a.tsx"
+printf 'ruleDirs: [rules]\n' > "$jsx/sgconfig.yml"
+for l in Tsx Html JavaScript Css; do
+  id="no-comments-$(echo "$l" | tr 'A-Z' 'a-z')"
+  printf 'id: %s\nlanguage: %s\nseverity: error\nignores: ["fixtures/**"]\nrule: { kind: comment }\nfix: ""\n' "$id" "$l" > "$jsx/rules/$id.yml"
+done
+# A rule the repo already had: the cleanup must not apply its fix.
+printf 'id: prefer-two\nlanguage: Tsx\nseverity: error\nrule: { pattern: "const q = 1" }\nfix: "const q = 2"\n' > "$jsx/rules/prefer-two.yml"
+printf 'const o = {/* x */};\nfunction f() {/* y */}\nconst v = <div>{/* a */}<span>{x}</span>{\n  /* b */\n}</div>;\nfunction g() { return/* r */1; }\n// full line\nconst s = `a  \n`;\nconst q = 1;\n' > "$jsx/a.tsx"
+printf '<!-- h -->\n<style>a/* c */:hover {}</style>\n<script>function f() { return/*\n*/1 }</script>\n' > "$jsx/b.html"
 printf 'const v = <div>{}</div>;\n' > "$jsx/fixtures/page.tsx"
 git -C "$jsx" add -A
 git -C "$jsx" -c user.name=t -c user.email=t@t commit -qm init
-snap="$(git -C "$jsx" rev-parse HEAD)"
-(cd "$jsx" && ast-grep scan --inline-rules '{id: c, language: Tsx, ignores: ["fixtures/**"], rule: {kind: comment}, fix: ""}' -U) >/dev/null 2>&1
-(cd "$jsx" && bash -c "${jsx_cmd//<snap>/$snap}") >/dev/null 2>&1
+run_removal "$jsx" Tsx >/dev/null 2>"$WORK/tidy.err" || cat "$WORK/tidy.err"
 got="$(cat "$jsx/a.tsx")"
-[ "$got" = "$(printf 'const o = {};\nfunction f() {}\nconst v = <div><span>{x}</span></div>;')" ] \
-  && ok "removes empty JSX containers, keeps object literals and blocks" || bad "empty JSX containers" "$got"
+want="$(printf 'const o = {};\nfunction f() {}\nconst v = <div><span>{x}</span></div>;\nfunction g() { return 1; }\nconst s = `a  \n`;\nconst q = 1;')"
+[ "$got" = "$want" ] \
+  && ok "removes comments and empty JSX, keeps objects, blocks, string data; separates tokens; no other rule's fix" \
+  || bad "end to end" "$(diff <(echo "$want") <(echo "$got"))"
+got="$(cat "$jsx/b.html")"
+want="$(printf '\n<style>a:hover {}</style>\n<script>function f() { return\n1 }</script>')"
+[ "$got" = "$want" ] && ok "removes HTML, CSS, and JavaScript comments from one HTML file" \
+  || bad "mixed-language HTML" "$(diff <(echo "$want") <(echo "$got"))"
 [ "$(cat "$jsx/fixtures/page.tsx")" = 'const v = <div>{}</div>;' ] \
   && ok "leaves files the comment removal didn't change" || bad "unchanged files left alone" "$(cat "$jsx/fixtures/page.tsx")"
 
 echo "docstring rule"
 doc_rule="$(awk '/When Python docstrings are banned/{f=1} f && /^```yaml/{g=1; next} g && /^```/{exit} g' "$SKILL")"
 printf 'id: no-docstrings-python\nlanguage: Python\nseverity: error\nmessage: m\n%s\n' "$doc_rule" > "$WORK/doc.yml"
-# Lines 0, 2, 6, 9, 11, 13 are docstrings by Python's own rules. The
-# f-strings run code and are never docstrings; the rest are ordinary code.
+# Lines 0, 2, 6, 9, 11, 13, 25 are docstrings by Python's own rules. f-strings,
+# with or without {…}, and byte strings never are; the rest is ordinary code.
 cat > "$WORK/doc.py" <<'EOF'
 """module"""
 def f():
@@ -220,10 +241,16 @@ def mixed():
     "x" f"{print(1)}"
 def conditional(x):
     ("a" if x else "b")
+def fplain():
+    f"plain"
+def bytes_():
+    b"x"
+def raw():
+    r"raw doc"
 EOF
 got="$(ast-grep scan -r "$WORK/doc.yml" --json=stream "$WORK/doc.py" 2>/dev/null \
   | awk 'match($0, /"start":\{"line":[0-9]+/) { print substr($0, RSTART + 16, RLENGTH - 16) }' | sort -n | paste -sd' ' -)"
-[ "$got" = "0 2 6 9 11 13" ] && ok "matches plain, concatenated, and parenthesized docstrings; not f-strings or code" \
+[ "$got" = "0 2 6 9 11 13 25" ] && ok "matches plain, raw, concatenated, and parenthesized docstrings; not f-, byte strings, or code" \
   || bad "docstrings only" "$got"
 
 echo "rule test template"
@@ -278,7 +305,6 @@ out="$(cd "$tpl" && ast-grep test --skip-snapshot-tests 2>&1)"
 
 echo "ledger and cleanup scope"
 ledger_cmd="$(awk '/^Then record every comment the cleanup will remove/{f=1} f && /^```bash/{g=1; next} g && /^```/{exit} g' "$SKILL")"
-cleanup_cmd="$(grep -m1 "^ast-grep scan .* -U$" "$SKILL")"
 led="$WORK/le,d"
 mkdir -p "$led/rules" "$led/.github" "$WORK/ls"
 git -C "$led" init -q
@@ -347,9 +373,6 @@ ledger_out="$(cd "$led" && PATH="$WORK/noperl:$PATH" eval "$ledger_run" 2>/dev/n
 [ "$ledger_out" != "ledger exit 0" ] && ok "ledger stops when it can't unhide suppressed files" || bad "perl failure" "$ledger_out"
 git -C "$led" worktree list | grep -q "$WORK/ls/base" && bad "ledger removes its worktree" "still listed" \
   || ok "ledger removes its worktree"
-(cd "$led" && eval "$cleanup_cmd") >/dev/null 2>&1
-[ -n "$cleanup_cmd" ] && [ "$(cat "$led/a.py")" = "$(printf '\nx = 1  # noqa: E501')" ] \
-  && ok "cleanup applies only the guard's fixes" || bad "cleanup scope" "$(cat "$led/a.py")"
 
 echo "fix: '' removes comment text only"
 mkdir -p "$WORK/fix"
@@ -457,6 +480,13 @@ rm "$repo/.git/a.py"
 printf '# ast-grep-ignore\n\n# hidden\n' > "$repo/rules/bypass.py"
 lint_case "fails on file-level ast-grep-ignore under rules/" nonzero
 rm "$repo/rules/bypass.py"
+
+git -C "$repo" config grep.patternType fixed
+lint_case "passes on a clean repo with grep.patternType=fixed" 0
+printf '# ast-grep-ignore\n\n# hidden\n' > "$repo/bypass.py"
+lint_case "fails on the token even with grep.patternType=fixed" nonzero
+rm "$repo/bypass.py"
+git -C "$repo" config --unset grep.patternType
 
 lint_case "passes again once the bypass is gone" 0
 

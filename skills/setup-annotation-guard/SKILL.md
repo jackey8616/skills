@@ -188,9 +188,9 @@ utils:
   string-literal:
     any:
       - kind: string
-        not: { has: { kind: interpolation, stopBy: end } }
+        not: { has: { kind: string_start, regex: '^[a-zA-Z]*[fFtTbB]' } }
       - kind: concatenated_string
-        not: { has: { kind: interpolation, stopBy: end } }
+        not: { has: { kind: string_start, regex: '^[a-zA-Z]*[fFtTbB]', stopBy: end } }
       - kind: parenthesized_expression
         has: { matches: string-literal }
 rule:
@@ -198,7 +198,7 @@ rule:
   has: { matches: string-literal }
 ```
 
-This matches what Python itself takes as a docstring: a plain string statement, implicitly concatenated (`"a" "b"`) or parenthesized (`("a")`). An f-string with a `{…}` runs code, so it's left alone; Python never takes one as a docstring anyway. The same shapes elsewhere in a body do nothing at runtime and are matched too.
+This matches what Python itself takes as a docstring: a plain string statement, implicitly concatenated (`"a" "b"`) or parenthesized (`("a")`). f-strings, t-strings, and byte strings are left alone, with or without `{…}`: Python never takes one as a docstring, and an f-string runs code. The same shapes elsewhere in a body do nothing at runtime and are matched too.
 
 `severity: error` makes `ast-grep scan` exit 1 on a match, so it can gate lint and CI. The `message` and `note` are what the next agent reads when it writes a comment, so they say what to do instead.
 
@@ -250,7 +250,7 @@ Then record every comment the cleanup will remove. Scan a checkout of `<base>`, 
 ```bash
 git worktree add --detach <scratchpad>/base <base> &&
 (cd <scratchpad>/base &&
- { git grep -lz 'ast-grep[-]ignore' > <scratchpad>/suppressed || [ $? = 1 ]; } &&
+ { git grep -lz -G 'ast-grep[-]ignore' > <scratchpad>/suppressed || [ $? = 1 ]; } &&
  xargs -0 -r perl -pi -e 's/ast-grep-ignore/ast-grep_ignore/g' < <scratchpad>/suppressed &&
  ast-grep scan -c "$OLDPWD/sgconfig.yml" --no-ignore hidden --globs '!.git' --filter '^no-(comments|docstrings)-' --info --json=stream) > <scratchpad>/removed-comments.jsonl
 ledger_rc=$?
@@ -267,12 +267,13 @@ This is the ledger: one object per match, with its file, position, and full text
 Add to the repo's existing lint command (package script, Makefile target, or whatever CI and the repo's CLAUDE.md or AGENTS.md tell agents to run), so the check runs wherever lint already runs:
 
 ```bash
-ast-grep test --skip-snapshot-tests && ast-grep scan --no-ignore hidden --globs '!.git' && ! git grep -n --untracked 'ast-grep[-]ignore'
+ast-grep test --skip-snapshot-tests && ast-grep scan --no-ignore hidden --globs '!.git' && ! git grep -n --untracked -G 'ast-grep[-]ignore'
 ```
 
-The scan flags are the ones from section 1: without them, comments in `.github/` and other hidden directories pass. The last part fails lint when `ast-grep-ignore` appears anywhere in the repo, comment or string, any line, any directory. Anything narrower is a way around it. Two details keep it honest:
+The scan flags are the ones from section 1: without them, comments in `.github/` and other hidden directories pass. The last part fails lint when `ast-grep-ignore` appears anywhere in the repo, comment or string, any line, any directory. Anything narrower is a way around it. Three details keep it honest:
 
 - `--untracked`: plain `git grep` searches only tracked files, so a new file an agent hasn't staged yet would slip past. Files the repo's `.gitignore` excludes stay out, as they do for `ast-grep scan`.
+- `-G` makes the pattern a basic regex whatever the user's `grep.patternType` says; with `fixed`, `[-]` would be taken literally and match nothing.
 - `[-]` matches the same text, but the command's own text doesn't contain `ast-grep-ignore`, so the Makefile or package.json holding it doesn't fail its own check.
 
 Paste it into the lint target as is. It has no `$`, double quotes, or backslashes, so it needs no escaping in a Makefile recipe or a package.json script.
@@ -291,25 +292,32 @@ Then take a snapshot of the working tree. `git stash create` records it as a com
 snap="$(git stash create)"; snap="${snap:-HEAD}"; echo "$snap"
 ```
 
-Keep the printed sha; the commands below need it. Then remove the comments:
+Keep the printed sha; the commands below need it. Each removal is a pair: the scan with `--json=stream` records exactly what the same scan with `-U` then deletes, and tidy.py works from those records. One rule per pair: when several rules fix the same file (an HTML file's comment, `<script>`, and `<style>`), one `-U` keeps only one rule's fixes. Remove the comments, then the empty `{}` that `{/* … */}` leaves in JSX, as one block, since the numbering runs through it. `<Tsx JavaScript>` is whichever of the two the repo has; leave out the second loop if neither:
 
 ```bash
-ast-grep scan --no-ignore hidden --globs '!.git' --filter '^no-(comments|docstrings)-' -U
+rm -f <scratchpad>/cuts-*.jsonl; n=0
+for rule in rules/*.yml; do
+  id="$(basename "$rule" .yml)"
+  case "$id" in no-comments-*|no-docstrings-*) ;; *) continue ;; esac
+  n=$((n + 1)); cuts="<scratchpad>/cuts-$(printf %02d "$n").jsonl"
+  ast-grep scan --no-ignore hidden --globs '!.git' --filter "^$id\$" --json=stream > "$cuts"
+  ast-grep scan --no-ignore hidden --globs '!.git' --filter "^$id\$" -U > /dev/null
+done
+for lang in <Tsx JavaScript>; do
+  n=$((n + 1)); cuts="<scratchpad>/cuts-$(printf %02d "$n").jsonl"
+  jsx="{id: empty-jsx, language: $lang, rule: {kind: jsx_expression, regex: '^\{\s*\}\$'}, fix: ''}"
+  git diff --name-only -z <snap> | xargs -0 -r ast-grep scan --inline-rules "$jsx" --json=stream > "$cuts"
+  git diff --name-only -z <snap> | xargs -0 -r ast-grep scan --inline-rules "$jsx" -U > /dev/null
+done
 ```
 
-`--filter` keeps the fixes to the guard's rules, as for the ledger. It exits 1 while matches without a fix remain, such as docstrings; that's expected here. The fix deletes the comment text only, so it leaves blank lines and trailing whitespace behind, and in JSX an empty `{}` where `{/* … */}` was. Remove the empty `{}`, for each of Tsx and JavaScript the repo has, in the files the removal changed and nowhere else:
+Rule files are named by their id. Filtering on it keeps the fixes to the guard's rules, as for the ledger. A `-U` scan exits 1 while matches without a fix remain, such as docstrings; that's expected here. The fix deletes the comment text only, so it leaves blank lines and trailing whitespace behind. The JSX rule matches only an expression container with nothing in it, so `const o = {/* x */}` keeps its `{}`. An inline rule has no `ignores`, so the changed-files list is what keeps it out of fixtures. Then:
 
 ```bash
-git diff --name-only -z <snap> | xargs -0 -r ast-grep scan --inline-rules '{id: empty-jsx, language: <Tsx|JavaScript>, rule: {kind: jsx_expression, regex: "^\\{\\s*\\}$"}, fix: ""}' -U
+python3 "${CLAUDE_SKILL_DIR}/scripts/tidy.py" --base <snap> <scratchpad>/cuts-*.jsonl
 ```
 
-It matches only a JSX expression container with nothing in it, so `const o = {/* x */}` keeps its `{}`. An inline rule has no `ignores`, so the changed-files list is what keeps it out of fixtures. Then:
-
-```bash
-python3 "${CLAUDE_SKILL_DIR}/scripts/tidy.py" --base <snap>
-```
-
-It touches only where text was removed since the snapshot: the whitespace and blank lines the removal left. Everything else is kept byte for byte. Run the repo's formatter after it, if the repo has one.
+It touches only where the recorded removals cut: it strips the whitespace and blank lines they left, and puts back the whitespace a comment stood for where its removal joined code, by the language's own rule: in JavaScript and TypeScript a comment holding a line terminator is a line break (`return/*⏎*/1` keeps its automatic semicolon), and in Go one holding an LF is; in C it's one space even then; in CSS it separates two names and is nothing otherwise (`@media/**/screen`, but `a/**/:hover` is `a:hover`). HTML comment cuts stay as `-U` left them, since whitespace in `<pre>` is content. Everything else is kept byte for byte. A file that isn't the snapshot minus those removals is skipped and named; find what changed it before going on. Exit 3 names each line a removal left ending in a backslash, which now continues onto the next line (`#define X \/* note */`); fix each by hand. Run the repo's formatter after tidy.py, if the repo has one.
 
 `-U` doesn't touch docstrings, because `no-docstrings-python` has no `fix`: removing one can leave a function or class with an empty body, which is a syntax error. Remove each by hand, adding `...` only where the body would otherwise be empty.
 
@@ -319,7 +327,7 @@ Unguarded comments the user chose to remove (Ask once): remove them by hand now.
 
 All must hold. Report each with its evidence:
 
-- Build, typecheck, lint, and test give the same results as the section 0 baseline. A difference means a removed comment was a directive. Find it, add it to the exceptions, restore it, and re-run. A lint command this skill created has no baseline; report it as absent before, passing after.
+- Build, typecheck, lint, and test give the same results as the section 0 baseline. A difference means the cleanup changed behaviour. Find the file at the failing spot and diff it against `<snap>`. A removed directive → add it to the exceptions, restore it, and re-run. Code the removal changed → put it back as it was, minus the comment, and re-run. A lint command this skill created has no baseline; report it as absent before, passing after.
 - `ast-grep test --skip-snapshot-tests` passes.
 - The full lint command from section 4 passes on the cleaned repo.
 - The guard catches the file-level bypass: put a comment containing `ast-grep-ignore`, a blank line, and another comment in a new, unstaged file in the repo, and run the repo's lint target (not the bare command). An exit code alone proves nothing; it could fail for another reason. It must fail with `git grep` printing that file's line. Then delete the `ast-grep-ignore` line from the same file and run it again: now the scan must report the other comment. Delete the file.
