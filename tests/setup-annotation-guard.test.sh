@@ -335,6 +335,12 @@ git -C "$led" config grep.patternType not-a-type
 ledger_out="$(set +o pipefail; cd "$led" && eval "$ledger_run" 2>/dev/null | tail -1)"
 [ "$ledger_out" != "ledger exit 0" ] && ok "ledger stops when git grep fails, without pipefail" || bad "grep failure" "$ledger_out"
 git -C "$led" config --unset grep.patternType
+if command -v zsh >/dev/null; then
+  rm -f "$WORK/lp/removed-comments.jsonl"
+  ledger_out="$(cd "$plain" && zsh -c "$plain_run" 2>/dev/null | tail -1)"
+  [ "$ledger_out" = "ledger exit 0" ] && ! git -C "$plain" worktree list | grep -q "$WORK/lp/base" \
+    && ok "ledger runs in zsh and removes its worktree" || bad "ledger in zsh" "$ledger_out"
+fi
 mkdir -p "$WORK/noperl"
 printf '#!/bin/sh\nexit 42\n' > "$WORK/noperl/perl"; chmod +x "$WORK/noperl/perl"
 ledger_out="$(cd "$led" && PATH="$WORK/noperl:$PATH" eval "$ledger_run" 2>/dev/null | tail -1)"

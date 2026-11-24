@@ -148,7 +148,7 @@ fix: ''
 
 `ignores` applies only to the rule it's written in. A path goes in every rule that reaches files there, and only those: a rule reaches its own language's files, and the HTML, JavaScript, TypeScript, and CSS rules all reach `.html` files (section 1). So an `.html` fixture directory goes in all four of those rules, if the repo has them; a Python rule never needs it.
 
-A language with no exceptions drops the `not:` block. The rule files hold no comments of their own. They live in the repo, and an example comment there is the first thing the next agent copies.
+`language:` is spelled as the tables in this skill spell it (`CSS`, `YAML`, `C++`). A language with no exceptions drops the `not:` block. The rule files hold no comments of their own. They live in the repo, and an example comment there is the first thing the next agent copies.
 
 Position-bound exceptions go in the same `not: any:` list. They name the file's root node, which differs by language: `module` for Python; `program` for TypeScript, Tsx, JavaScript, Bash, and Ruby; `source_file` for Go and Rust. Another language → probe it the way section 1 probes comment kinds. The Python forms:
 
@@ -253,9 +253,9 @@ git worktree add --detach <scratchpad>/base <base> &&
  { git grep -lz 'ast-grep[-]ignore' > <scratchpad>/suppressed || [ $? = 1 ]; } &&
  xargs -0 -r perl -pi -e 's/ast-grep-ignore/ast-grep_ignore/g' < <scratchpad>/suppressed &&
  ast-grep scan -c "$OLDPWD/sgconfig.yml" --no-ignore hidden --globs '!.git' --filter '^no-(comments|docstrings)-' --info --json=stream) > <scratchpad>/removed-comments.jsonl
-status=$?
+ledger_rc=$?
 git worktree remove --force <scratchpad>/base
-echo "ledger exit $status"
+echo "ledger exit $ledger_rc"
 ```
 
 Each step runs only if the one before it succeeded, so nothing touches the real repo if the checkout fails; `git grep` finding nothing counts as success, and no pipe hides a failure, whatever the shell's options. `--info` lowers every match to info, so the scan exits 0 when it only found comments. Anything but `ledger exit 0` is a failure: stop, and don't remove a comment the ledger hasn't recorded.
@@ -277,7 +277,7 @@ The scan flags are the ones from section 1: without them, comments in `.github/`
 
 Paste it into the lint target as is. It has no `$`, double quotes, or backslashes, so it needs no escaping in a Makefile recipe or a package.json script.
 
-No lint command in the repo → create one where the repo keeps its commands (a `lint` script in `package.json`, a `lint` target in the Makefile), holding just this. If CI doesn't run that lint command, add a step that does. Then update the docs that list the repo's development commands (README, CONTRIBUTING): a list of "the checks CI runs" is now one short. If ast-grep is pinned in CI only, install it in a step before lint, after the setup step for its package manager (`actions/setup-node` for npm, `actions/setup-python` for pip); add that setup step if the workflow lacks it. If no agent instruction file in the repo tells agents to run lint before finishing, add one line saying so. Claude Code reads `CLAUDE.md`; Codex reads `AGENTS.md`. Add the line to whichever exists. Neither exists → create both, each with the same line. Not a symlink: a Windows clone without `core.symlinks` checks a symlink out as a text file holding the target's name, and Codex reads that instead. Only one exists → add the line there, and say in the reply which harness won't see it. Don't add hooks.
+No lint command in the repo → create one where the repo keeps its commands, holding just this: a `lint` script as the last entry of `package.json`'s `scripts`, or a `lint` target at the end of the Makefile. If CI doesn't run that lint command, add a step that does, right after the step that installs dependencies: it's the fastest check, so it fails first. Then update the docs that list the repo's development commands (README, CONTRIBUTING): a list of "the checks CI runs" is now one short. Add the lint command as the list's last line, in the list's own format; if its lines carry comments, the comment is `# no code comments (ast-grep)`. If ast-grep is pinned in CI only, install it in a step before lint, after the setup step for its package manager (`actions/setup-node` for npm, `actions/setup-python` for pip); add that setup step if the workflow lacks it. If no agent instruction file in the repo tells agents to run lint before finishing, add one line saying so. Claude Code reads `CLAUDE.md`; Codex reads `AGENTS.md`. Add the line to whichever exists. Neither exists → create both, each with the same line. Not a symlink: a Windows clone without `core.symlinks` checks a symlink out as a text file holding the target's name, and Codex reads that instead. Only one exists → add the line there, and say in the reply which harness won't see it. Don't add hooks.
 
 ## 5. Remove the existing comments
 
