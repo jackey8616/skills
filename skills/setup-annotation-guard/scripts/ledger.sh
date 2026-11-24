@@ -22,6 +22,10 @@ repo="$PWD"
 tree="$dir/base-tree"
 base="$(cat "$dir/base")" || { echo "ledger exit 1"; exit 1; }
 
+for f in suppressions.txt suppressed removed-comments.jsonl; do
+  : > "$dir/$f" || { echo "ledger exit 1"; exit 1; }
+done
+
 rc=0
 git worktree add -q --detach "$tree" "$base" || { echo "ledger exit 1"; exit 1; }
 (

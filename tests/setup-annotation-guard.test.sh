@@ -235,6 +235,12 @@ printf 'id: no-comments-bad\nlanguage: Nope\nrule: { kind: comment }\n' > "$jsx/
 rc=0; run_removal "$jsx" >/dev/null 2>&1 || rc=$?
 [ "$rc" = 2 ] && ok "exits 2 when ast-grep fails" || bad "ast-grep failure" "exit $rc"
 rm "$jsx/rules/no-comments-bad.yml"
+git -C "$jsx" checkout -q -- . && rm -f "$WORK/cuts/snap" && mkdir "$WORK/cuts/snap"
+before="$(git -C "$jsx" diff HEAD)"
+rc=0; run_removal "$jsx" >/dev/null 2>&1 || rc=$?
+[ "$rc" = 2 ] && [ "$(git -C "$jsx" diff HEAD)" = "$before" ] && ok "stops before removing anything when the snapshot can't be saved" \
+  || bad "snapshot write failure" "exit $rc"
+rmdir "$WORK/cuts/snap"
 if command -v zsh >/dev/null; then
   printf 'const z = 1; // z\n' > "$jsx/z.tsx"
   git -C "$jsx" add z.tsx
@@ -252,10 +258,18 @@ for shell in bash zsh; do
   rm -rf "$chk/out"
   got="$(cd "$chk" && "$shell" -c "$(skill_cmd checks.sh "$chk" | sed -e "s|git rev-parse HEAD > $chk/base && ||" -e "s|$chk/before|$chk/out|")")"
   want="$(printf 'build  exit 0\ntypecheck  absent\nlint  exit 1\ntest  exit 0')"
-  [ "$got" = "$want" ] && [ "$(cat "$chk/out/build.log")" = "$(printf 'a\nb')" ] && [ "$(cat "$chk/out/test.log")" = "3 passed" ] \
+  [ "$got" = "$want" ] && [ "$(cat "$chk/out/status.txt")" = "$want" ] && [ "$(cat "$chk/out/build.log")" = "$(printf 'a\nb')" ] && [ "$(cat "$chk/out/test.log")" = "3 passed" ] \
     && ok "$shell: every check run with bash, absent ones named, status and output recorded" \
     || bad "checks.sh from $shell" "$got"
 done
+
+bad_grep="$(grep -n "git grep" "$SKILL" | grep 'ast-grep\[-\]ignore' | grep -v -- ' -G ' || true)"
+[ -z "$bad_grep" ] && ok "every git grep for the token in SKILL.md uses -G" || bad "git grep without -G" "$bad_grep"
+
+rm -rf "$chk/out" && mkdir -p "$chk/out/build.log"
+rc=0; (cd "$chk" && bash "$ROOT/skills/setup-annotation-guard/scripts/checks.sh" "$chk/checks.txt" "$chk/out" >/dev/null 2>&1) || rc=$?
+[ "$rc" = 2 ] && ! grep -q '^lint' "$chk/out/status.txt" && ok "exits 2, before running anything more, when a log can't be written" \
+  || bad "log write failure" "exit $rc"
 
 echo "docstring rule"
 doc_rule="$(awk '/When Python docstrings are banned/{f=1} f && /^```yaml/{g=1; next} g && /^```/{exit} g' "$SKILL")"
@@ -451,6 +465,10 @@ out="$(cd "$sup" && zsh -c "$(skill_cmd ledger.sh "$WORK/sp")" 2>/dev/null | tai
   && [ ! -s "$WORK/sp/removed-comments.jsonl" ] \
   && ok "records the token's line in a path the rules ignore, where the scan records nothing" \
   || bad "records the token" "$out: $(cat "$WORK/sp/suppressions.txt")"
+rm "$WORK/sp/suppressions.txt" && mkdir "$WORK/sp/suppressions.txt"
+out="$(cd "$sup" && bash -c "$(skill_cmd ledger.sh "$WORK/sp")" 2>/dev/null | tail -1)"
+[ "$out" != "ledger exit 0" ] && ok "fails when the suppression record can't be written" || bad "record write failure" "$out"
+rmdir "$WORK/sp/suppressions.txt"
 rm "$sup/vendor/a.py"
 git -C "$sup" add -A
 git -C "$sup" -c user.name=t -c user.email=t@t commit -qm clean

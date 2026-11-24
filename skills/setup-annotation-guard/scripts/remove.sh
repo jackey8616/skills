@@ -31,7 +31,7 @@ scan() {
 
 snap="$(git stash create)" || exit 2
 snap="${snap:-$(git rev-parse HEAD)}" || exit 2
-echo "$snap" > "$dir/snap"
+echo "$snap" > "$dir/snap" || exit 2
 echo "snapshot $snap"
 
 cuts="$dir/cuts"
@@ -41,6 +41,7 @@ for rule in rules/*.yml; do
   id="$(basename "$rule" .yml)"
   case "$id" in no-comments-*|no-docstrings-*) ;; *) continue ;; esac
   n=$((n + 1)); out="$cuts/$(printf %02d "$n").jsonl"
+  : > "$out" || exit 2
   scan --no-ignore hidden --globs '!.git' --filter "^$id\$" --json=stream > "$out"
   scan --no-ignore hidden --globs '!.git' --filter "^$id\$" -U > /dev/null
 done
@@ -49,7 +50,7 @@ files=()
 while IFS= read -r -d '' f; do files+=("$f"); done < <(git diff --name-only -z "$snap")
 for lang in Tsx JavaScript; do
   n=$((n + 1)); out="$cuts/$(printf %02d "$n").jsonl"
-  : > "$out"
+  : > "$out" || exit 2
   [ "${#files[@]}" -gt 0 ] || continue
   jsx="{id: empty-jsx, language: $lang, rule: {kind: jsx_expression, regex: '^\{\s*\}\$'}, fix: ''}"
   scan --inline-rules "$jsx" --json=stream "${files[@]}" > "$out"
