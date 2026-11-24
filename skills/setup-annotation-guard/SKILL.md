@@ -161,14 +161,19 @@ Position-bound exceptions go in the same `not: any:` list. They name the file's 
     - not: { follows: { not: { regex: '^#!' }, stopBy: end } }
 ```
 
-A TypeScript `/// <reference>` at the top of the file:
+TypeScript `/// <reference>` lines at the top of the file, any number of them in a row:
 
 ```yaml
 - all:
-    - regex: '^/// <reference types="(vite/client)" />$'
+    - regex: '^/// <reference types="(vite/client|vite-plugin-pwa/client)" />$'
     - inside: { kind: program, stopBy: neighbor }
-    - not: { follows: { regex: '[\s\S]' } }
+    - not:
+        follows:
+          not: { regex: '^/// <reference types="(vite/client|vite-plugin-pwa/client)" />$' }
+          stopBy: end
 ```
+
+Every node before it must be another listed reference, so the second and third pass and one after code doesn't. Keep the two alternations identical.
 
 The alternations are examples; use the exact shebangs, encodings, and references the inventory found. `stopBy: neighbor` is `inside`'s default, written out because it's what makes this work: the comment's direct parent must be the file itself. With `stopBy: end`, a comment at any depth would pass. The first allows a listed shebang only when no other node precedes it. The second allows a listed coding line only at the top level, with nothing but a shebang before it.
 
@@ -268,17 +273,33 @@ The same rules bind a subagent that writes them; put them in its brief.
 
 ### Remove them
 
+First take a snapshot of the working tree as it is now. `git stash create` records it as a commit without touching the tree, the index, or the stash list; it prints nothing when the tree is clean, and then `HEAD` is the snapshot. Section 4's edits are already in it, so nothing below mistakes them for comment removal.
+
+```bash
+snap="$(git stash create)"; snap="${snap:-HEAD}"; echo "$snap"
+```
+
+Keep the printed sha; the commands below need it. Then remove the comments:
+
 ```bash
 ast-grep scan --no-ignore hidden --globs '!.git' -U
 ```
 
-It exits 1 while matches without a fix remain, such as docstrings; that's expected here. The fix deletes the comment text only, so it leaves blank lines, trailing whitespace, and in JSX an empty `{}` behind. Run the repo's formatter if it has one; either way, then run:
+It exits 1 while matches without a fix remain, such as docstrings; that's expected here. The fix deletes the comment text only, so it leaves blank lines and trailing whitespace behind, and in JSX an empty `{}` where `{/* … */}` was. Remove the empty `{}`, for each of Tsx and JavaScript the repo has, in the files the removal changed and nowhere else:
 
 ```bash
-python3 "${CLAUDE_SKILL_DIR}/scripts/tidy.py"
+git diff --name-only -z <snap> | xargs -0 -r ast-grep scan --inline-rules '{id: empty-jsx, language: <Tsx|JavaScript>, rule: {kind: jsx_expression, regex: "^\\{\\s*\\}$"}, fix: ""}' -U
 ```
 
-It compares each changed file with `HEAD` and touches only the lines the removal changed: it strips trailing whitespace, drops lines left blank, drops a leftover JSX `{}`, caps a merged blank run at the longer of the two it joined, and removes blank lines left at the top of a file.
+The rule matches only a JSX expression container with nothing in it, never an object literal or a block, so `const o = {/* x */}` keeps its `{}`. In a changed file, an empty container that was already there goes too; it rendered nothing. Limiting it to changed files is what keeps it out of the paths in `ignores`: an inline rule has no `ignores` of its own, and a fixture the comment rules skipped hasn't changed. Then:
+
+```bash
+python3 "${CLAUDE_SKILL_DIR}/scripts/tidy.py" --base <snap>
+```
+
+It compares each file changed since the snapshot and touches only where text was removed: whitespace left between a removal and the end of its line, lines left blank, a blank run a dropped line merged (capped at the longer of the runs it joined), and blank lines left at the top of a file. Everything else is kept byte for byte, line endings included, so trailing spaces that are string data stay. Run the repo's formatter after it, if the repo has one.
+
+Write prose facts into the docs only after this, so tidy never sees those edits.
 
 `-U` doesn't touch docstrings, because `no-docstrings-python` has no `fix`: removing one can leave a function or class with an empty body, which is a syntax error. Remove each by hand, adding `...` only where the body would otherwise be empty.
 

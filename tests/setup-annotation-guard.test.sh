@@ -153,6 +153,47 @@ x = 1'
 pos_case "flags prose dressed as an env shebang" "0" '#!/usr/bin/env this is prose
 x = 1'
 
+echo "typescript reference exceptions"
+ref="$(awk '/^TypeScript `\/\/\/ <reference>` lines at the top/{f=1} f && /^```yaml/{g=1; next} g && /^```/{exit} g' "$SKILL")"
+[ -n "$ref" ] || bad "reference exceptions found in SKILL.md" "nothing"
+printf 'id: r\nlanguage: TypeScript\nseverity: error\nmessage: m\nrule:\n  kind: comment\n  not:\n    any:\n%s\n' \
+  "$(printf '%s\n' "$ref" | sed 's/^/      /')" > "$WORK/ref.yml"
+# ref_case <name> <want: start lines of matches> <file contents>
+ref_case() {
+  printf '%s\n' "$3" > "$WORK/ref.ts"
+  local got
+  got="$(ast-grep scan -r "$WORK/ref.yml" --json=stream "$WORK/ref.ts" 2>/dev/null \
+    | awk 'match($0, /"start":\{"line":[0-9]+/) { print substr($0, RSTART + 16, RLENGTH - 16) }' | sort -n | paste -sd' ' -)"
+  [ "$got" = "$2" ] && ok "$1" || bad "$1" "matches on lines '$got'"
+}
+ref_case "allows listed references in a row at the top" "" '/// <reference types="vite/client" />
+/// <reference types="vite-plugin-pwa/client" />
+const a = 1;'
+ref_case "flags a listed reference after code" "2" '/// <reference types="vite/client" />
+const a = 1;
+/// <reference types="vite/client" />'
+ref_case "flags an unlisted reference at the top" "0" '/// <reference types="other" />
+const a = 1;'
+
+echo "empty JSX expressions"
+jsx_cmd="$(grep -m1 'id: empty-jsx' "$SKILL" | sed 's/<Tsx|JavaScript>/Tsx/')"
+[ -n "$jsx_cmd" ] || bad "empty-jsx command found in SKILL.md" "nothing"
+jsx="$WORK/jsx"
+mkdir -p "$jsx/fixtures"
+git -C "$jsx" init -q
+printf 'const o = {/* x */};\nfunction f() {/* y */}\nconst v = <div>{/* a */}<span>{x}</span>{\n  /* b */\n}</div>;\n' > "$jsx/a.tsx"
+printf 'const v = <div>{}</div>;\n' > "$jsx/fixtures/page.tsx"
+git -C "$jsx" add -A
+git -C "$jsx" -c user.name=t -c user.email=t@t commit -qm init
+snap="$(git -C "$jsx" rev-parse HEAD)"
+(cd "$jsx" && ast-grep scan --inline-rules '{id: c, language: Tsx, ignores: ["fixtures/**"], rule: {kind: comment}, fix: ""}' -U) >/dev/null 2>&1
+(cd "$jsx" && bash -c "${jsx_cmd//<snap>/$snap}") >/dev/null 2>&1
+got="$(cat "$jsx/a.tsx")"
+[ "$got" = "$(printf 'const o = {};\nfunction f() {}\nconst v = <div><span>{x}</span></div>;')" ] \
+  && ok "removes empty JSX containers, keeps object literals and blocks" || bad "empty JSX containers" "$got"
+[ "$(cat "$jsx/fixtures/page.tsx")" = 'const v = <div>{}</div>;' ] \
+  && ok "leaves files the comment removal didn't change" || bad "unchanged files left alone" "$(cat "$jsx/fixtures/page.tsx")"
+
 echo "docstring rule"
 doc_rule="$(awk '/When Python docstrings are banned/{f=1} f && /^```yaml/{g=1; next} g && /^```/{exit} g' "$SKILL")"
 printf 'id: no-docstrings-python\nlanguage: Python\nseverity: error\nmessage: m\n%s\n' "$doc_rule" > "$WORK/doc.yml"

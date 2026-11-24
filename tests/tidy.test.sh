@@ -2,6 +2,7 @@
 # Tests for skills/setup-annotation-guard/scripts/tidy.py. Offline, no
 # ast-grep: each case commits a file with comments, writes what
 # `ast-grep scan -U` leaves behind, and checks what tidy.py makes of it.
+# In the fixtures, · stands for a space, so trailing spaces stay visible.
 #
 #   bash tests/tidy.test.sh
 set -uo pipefail
@@ -19,21 +20,30 @@ bad()  { fail=$((fail + 1)); echo "  FAIL $1"; echo "$2" | sed 's/^/       /'; }
 git -C "$WORK" init -q
 git -C "$WORK" config user.name test
 git -C "$WORK" config user.email test@example.com
+git -C "$WORK" config core.autocrlf false
 
-# expect <name> <file> <before -U> <after -U> <want>
+dots() { printf '%s' "$1" | sed 's/·/ /g'; }
+
+# expect <name> <file> <before -U> <after -U> <want> — passes only if tidy.py
+# exits 0, the input really differs from what's wanted, and the output
+# matches byte for byte.
 expect() {
-  local name="$1" file="$2"
-  printf '%s' "$3" > "$WORK/$file"
+  local name="$1" file="$2" rc=0
+  dots "$3" > "$WORK/$file"
   git -C "$WORK" add "$file"
   git -C "$WORK" commit -qm "$name"
-  printf '%s' "$4" > "$WORK/$file"
-  (cd "$WORK" && python3 "$TIDY" "$file" >/dev/null)
-  local got
-  got="$(cat "$WORK/$file")"
-  if [ "$got" = "$5" ]; then
+  dots "$4" > "$WORK/$file"
+  if cmp -s "$WORK/$file" <(dots "$5"); then
+    bad "$name" "fixture already equals the expected output"
+    return
+  fi
+  (cd "$WORK" && python3 "$TIDY" "$file" >/dev/null 2>&1) || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    bad "$name" "tidy.py exited $rc"
+  elif cmp -s "$WORK/$file" <(dots "$5"); then
     ok "$name"
   else
-    bad "$name" "$(diff <(printf '%s\n' "$5") <(printf '%s\n' "$got"))"
+    bad "$name" "$(diff <(dots "$5" | od -c) <(od -c < "$WORK/$file"))"
   fi
 }
 
@@ -47,14 +57,16 @@ const b = 2;
 const b = 2;
 ' \
 'const a = 1;
-const b = 2;'
+const b = 2;
+'
 
-expect "strips what a trailing comment leaves" b.py \
+expect "strips the spaces a trailing comment leaves" b.py \
 'x = 1  # trailing
 ' \
-'x = 1
+'x = 1··
 ' \
-'x = 1'
+'x = 1
+'
 
 expect "drops every line of a multi-line doc comment" c.ts \
 'const a = 1;
@@ -66,40 +78,13 @@ function f() {}
 ' \
 'const a = 1;
 
-
+·
 function f() {}
 ' \
 'const a = 1;
 
-function f() {}'
-
-expect "drops the {} a JSX comment leaves" d.tsx \
-'const v = (
-  <div>
-    {/* note */}
-    <span>{}</span>
-  </div>
-);
-' \
-'const v = (
-  <div>
-    {}
-    <span>{}</span>
-  </div>
-);
-' \
-'const v = (
-  <div>
-    <span>{}</span>
-  </div>
-);'
-
-expect "keeps a {} that was there before" e.ts \
-'const o = {}; // empty
-' \
-'const o = {};
-' \
-'const o = {};'
+function f() {}
+'
 
 expect "caps merged blank runs at the longer one" f.py \
 'import os
@@ -121,7 +106,8 @@ def f():
 
 
 def f():
-    pass'
+    pass
+'
 
 expect "joins blank runs around a dropped comment to one" g.ts \
 'const a = 1;
@@ -138,7 +124,8 @@ const b = 2;
 ' \
 'const a = 1;
 
-const b = 2;'
+const b = 2;
+'
 
 expect "removes blank lines left at the top" h.py \
 '# header
@@ -149,29 +136,80 @@ import os
 
 import os
 ' \
-'import os'
+'import os
+'
 
-expect "leaves lines the removal didn't change" i.py \
-'x = 1
+expect "keeps unchanged trailing spaces and whitespace-only lines" i.py \
+'x = 1···
+s = """a
+···
+b"""
 # c
 y = 2
 ' \
-'x = 1
+'x = 1···
+s = """a
+···
+b"""
 
 y = 2
 ' \
-'x = 1
-y = 2'
+'x = 1···
+s = """a
+···
+b"""
+y = 2
+'
+
+expect "keeps CRLF line endings" j.py \
+"$(printf 'x = 1\r\n# c\r\ny = 2\r\n')" \
+"$(printf 'x = 1\r\n\r\ny = 2\r\n')" \
+"$(printf 'x = 1\r\ny = 2\r\n')"
+
+expect "keeps trailing spaces that are string data" l.js \
+'// full line
+const s = /* remove */ `a···
+b`;
+' \
+'
+const s =  `a···
+b`;
+' \
+'const s =  `a···
+b`;
+'
 
 echo "no paths: tidies every changed file"
-printf 'a = 1\n# c\nb = 2\n' > "$WORK/j.py"
+printf 'a = 1\n# c\nb = 2\n' > "$WORK/my file.py"
 printf 'c = 3\n' > "$WORK/k.py"
-git -C "$WORK" add j.py k.py
-git -C "$WORK" commit -qm j
-printf 'a = 1\n\nb = 2\n' > "$WORK/j.py"
-out="$(cd "$WORK" && python3 "$TIDY")"
-[ "$(cat "$WORK/j.py")" = "$(printf 'a = 1\nb = 2')" ] && [ "$out" = "$(printf 'tidied   j.py\n1 file(s) tidied')" ] \
-  && ok "finds changed files from git diff" || bad "finds changed files from git diff" "$out"
+git -C "$WORK" add "my file.py" k.py
+git -C "$WORK" commit -qm spaces
+printf 'a = 1\n\nb = 2\n' > "$WORK/my file.py"
+rc=0
+out="$(cd "$WORK" && python3 "$TIDY" 2>&1)" || rc=$?
+if [ "$rc" -eq 0 ] && [ "$(cat "$WORK/my file.py")" = "$(printf 'a = 1\nb = 2')" ] \
+  && [ "$out" = "$(printf 'tidied   my file.py\n1 file(s) tidied')" ]; then
+  ok "finds changed files from git diff, spaces in names included"
+else
+  bad "finds changed files from git diff, spaces in names included" "exit $rc: $out"
+fi
+
+echo "--base: edits before the snapshot are left alone"
+printf 'Fact.\n' > "$WORK/README.md"
+printf 'x = 1  # c\n' > "$WORK/m.py"
+git -C "$WORK" add README.md m.py
+git -C "$WORK" commit -qm base
+printf 'Updated fact.  \nNext line.\n' > "$WORK/README.md"
+snap="$(git -C "$WORK" stash create)"
+printf 'x = 1  \n' > "$WORK/m.py"
+rc=0
+(cd "$WORK" && python3 "$TIDY" --base "$snap" >/dev/null 2>&1) || rc=$?
+if [ "$rc" -eq 0 ] && [ "$(cat "$WORK/README.md")" = "$(printf 'Updated fact.  \nNext line.')" ] \
+  && [ "$(cat "$WORK/m.py")" = "x = 1" ]; then
+  ok "tidies the removal, keeps the earlier hard line break"
+else
+  bad "tidies the removal, keeps the earlier hard line break" "exit $rc: $(od -c < "$WORK/README.md" | head -2)"
+fi
 
 echo
 echo "$pass passed, $fail failed"
