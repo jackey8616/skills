@@ -18,7 +18,7 @@ The guard is ast-grep, not this skill. Everything an agent is allowed to write l
 - The guard isn't installed yet. This skill runs once per repo. `no-comments-*` rules already present → stop, and tell the user the guard is in place; changes to it from here on are edits to its rule files, reviewed like any other diff.
 - ast-grep runs as `ast-grep`. Never as `sg`: on Linux that name is the setgroups command.
 - The inventory needs ast-grep before the user picks how to pin it. Use the one on PATH. None → install one into your scratchpad, outside the repo (`npm install --prefix <scratchpad>/ast-grep @ast-grep/cli@<version>`), and say so in the reply. Prefer 0.39.5, the version this skill's tables were checked against.
-- Find the repo's own commands for build, typecheck, lint, and test (package scripts, Makefile, CI config). Run all four now and record each command, exit status, and pass/fail counts. This is the baseline section 6 compares against. A command that fails now is noted, not fixed. A command the repo doesn't have is recorded as absent.
+- Find the repo's own commands for build, typecheck, lint, and test (package scripts, Makefile, CI config). Run all four now and record each command, exit status, and pass/fail counts. This is the baseline section 6 compares against. A command that fails now is noted, not fixed. A command the repo doesn't have is recorded as absent. Record `git rev-parse HEAD` too: that's `<base>`, the revision the ledger (section 3) refers to, and it stays put when the user commits.
 
 ## 1. Inventory
 
@@ -44,9 +44,11 @@ Files ast-grep has no grammar for (TOML, Makefile, Dockerfile, …) can't be gua
 Code embedded in another language is a separate case:
 
 - `<script>` and `<style>` in HTML are guarded. In `.html` files the JavaScript rule reaches `<script>`, the TypeScript rule reaches `<script lang="ts">`, and the CSS rule reaches `<style>`; `-U` cleans them. Write those rules for a repo with HTML even if it has no `.js`, `.ts`, or `.css` files.
-- Code inside a string is invisible: a YAML `run: |` block is a YAML string, so the shell comments in it are never seen. The same goes for SQL in string literals. Find them by hand (`git grep -n` for `run: |` and the like) and count them for Ask once. If the user chooses to remove them, extract every one into `<scratchpad>/comments-embedded.jsonl` right after Ask once: one object per comment with its file, line, and full text. That's before section 4 edits any of those files. Section 5 removes each by its text, not its line.
+- Code inside a string is invisible: a YAML `run: |` block is a YAML string, so the shell comments in it are never seen. The same goes for SQL in string literals. Find them by hand (`git grep -n` for `run: |` and the like) and count them for Ask once. If the user chooses to remove them, they're recorded with the files ast-grep can't parse (below).
 
-Unparseable files and invisible embedded code both go in the reply under Unguarded. Whether their existing comments go is the user's call (Ask once). Run section 2's directive check over them too: unguarded files hold tool directives like any other (`--> statement-breakpoint` in a Drizzle migration, `-- +goose Up`, `# syntax=docker/dockerfile:1`), and removing one breaks the tool. Migrations are better left alone entirely.
+Unparseable files and invisible embedded code both go in the reply under Unguarded. Whether their existing comments go is the user's call (Ask once). Run section 2's directive check over them too: unguarded files hold tool directives like any other (`--> statement-breakpoint` in a Drizzle migration, `-- +goose Up`, `# syntax=docker/dockerfile:1`), and removing one breaks the tool. Migrations are better left alone entirely. If the user chooses to remove unguarded comments, extract every one into `<scratchpad>/comments-unguarded.jsonl` right after Ask once, before any file is edited: one object per comment with its file, line, and full text. Section 5 removes each by its text, not its line.
+
+Find any `ast-grep-ignore` already in the repo (`git grep -n 'ast-grep[-]ignore'`). It hides comments from every scan, and section 4 bans it. The ledger (section 3) neutralizes it in its own copy; section 5 deletes it.
 
 Markdown is prose, not code: leave it out of the inventory and the counts. Its `#` lines are headings, not comments.
 
@@ -200,7 +202,7 @@ This matches what Python itself takes as a docstring: a plain string statement, 
 
 `severity: error` makes `ast-grep scan` exit 1 on a match, so it can gate lint and CI. The `message` and `note` are what the next agent reads when it writes a comment, so they say what to do instead.
 
-Every rule gets a test file, built from this table and nothing else, so two runs on the same repo write the same file. `<s>` is the statement column.
+Every rule gets a test file, built from this table and nothing else, so two runs on the same repo write the same file. `<s>` is the statement column. A language section 1 probed because it isn't here gets a row of the same shape: its shortest top-level statement, a string holding its comment characters, and one sample of each comment kind the probe found. Give that row in the reply.
 
 | Language | `<s>` | String | Line | Block | Doc |
 | -------- | ----- | ------ | ---- | ----- | --- |
@@ -218,7 +220,7 @@ Every rule gets a test file, built from this table and nothing else, so two runs
 
 In this order, skipping an empty cell:
 
-- `valid`: the string; then each exception, in section 2's table order, once per listed value, on the line before `<s>`. An exception that allows a run (the TypeScript references) also gets all its values in a row.
+- `valid`: the string; then each exception, in section 2's table order, once per listed value, on the line before `<s>`. An exception that allows a run (the TypeScript references) also gets all its values in a row. Doc comments kept (Ask once) → the doc case goes here instead of in `invalid`.
 - `invalid`: the line comment, then `<s>`; `<s>` and the line comment on one line; the block comment and `<s>` on one line; the doc comment, then `<s>`. Then, per exception: its slot holding `x-keep-this`; a position-bound one after `<s>`; each banned variant section 2 names for its tool (`# noqa`, `@ts-ignore`, `eslint-disable` without a rule).
 
 Write every case as a `|` block scalar. Unquoted, `: ` makes YAML read a case as a map and `#` starts a YAML comment. `ast-grep-ignore` stays out: section 4 bans it everywhere, test files included. The docstring rule's test is fixed:
@@ -243,13 +245,22 @@ invalid:
 ast-grep test --skip-snapshot-tests
 ```
 
-Then record every comment the cleanup will remove, before section 4 touches any file, so the line numbers are `HEAD`'s:
+Then record every comment the cleanup will remove. Scan a checkout of `<base>`, not the working tree, so every position is `<base>`'s whatever this setup has edited, with the repo's own `sgconfig.yml`, so its rules and settings (`languageGlobs` and the like) apply as they will in cleanup:
 
 ```bash
-ast-grep scan --no-ignore hidden --globs '!.git' --json=stream > <scratchpad>/removed-comments.jsonl
+git worktree add --detach <scratchpad>/base <base> &&
+(cd <scratchpad>/base &&
+ { git grep -lz 'ast-grep[-]ignore' > <scratchpad>/suppressed || [ $? = 1 ]; } &&
+ xargs -0 -r perl -pi -e 's/ast-grep-ignore/ast-grep_ignore/g' < <scratchpad>/suppressed &&
+ ast-grep scan -c "$OLDPWD/sgconfig.yml" --no-ignore hidden --globs '!.git' --filter '^no-(comments|docstrings)-' --info --json=stream) > <scratchpad>/removed-comments.jsonl
+status=$?
+git worktree remove --force <scratchpad>/base
+echo "ledger exit $status"
 ```
 
-This is the ledger: one object per match, file, position, and full text. With `comments-embedded.jsonl` (section 1), it's what section 8 works from.
+Each step runs only if the one before it succeeded, so nothing touches the real repo if the checkout fails; `git grep` finding nothing counts as success, and no pipe hides a failure, whatever the shell's options. `--info` lowers every match to info, so the scan exits 0 when it only found comments. Anything but `ledger exit 0` is a failure: stop, and don't remove a comment the ledger hasn't recorded.
+
+This is the ledger: one object per match, with its file, position, and full text. With `comments-unguarded.jsonl` (section 1), it's what section 8 works from. `--filter` keeps it to the guard's rules; a repo that already had ast-grep rules keeps their matches out. The `perl` line breaks any `ast-grep-ignore` in the copy, so the comments it hid are recorded; its own row reads `ast-grep_ignore`.
 
 ## 4. Wire it in
 
@@ -272,7 +283,9 @@ No lint command in the repo → create one where the repo keeps its commands (a 
 
 The ledger from section 3 holds every comment this removes, so nothing is read or sorted here. What the comments knew is section 8's business, after the reply.
 
-First take a snapshot of the working tree. `git stash create` records it as a commit without touching the tree, the index, or the stash list; it prints nothing when the tree is clean, and then `HEAD` is the snapshot. Section 4's edits are in it, so nothing below mistakes them for comment removal. New untracked files, like the rule files, aren't; they hold no comments.
+Delete each `ast-grep-ignore` section 1 found, with its line if nothing else is on it. Until it's gone, the comments it hides are invisible to `-U` too.
+
+Then take a snapshot of the working tree. `git stash create` records it as a commit without touching the tree, the index, or the stash list; it prints nothing when the tree is clean, and then `HEAD` is the snapshot. Section 4's edits are in it, so nothing below mistakes them for comment removal. New untracked files, like the rule files, aren't; they hold no comments.
 
 ```bash
 snap="$(git stash create)"; snap="${snap:-HEAD}"; echo "$snap"
@@ -281,10 +294,10 @@ snap="$(git stash create)"; snap="${snap:-HEAD}"; echo "$snap"
 Keep the printed sha; the commands below need it. Then remove the comments:
 
 ```bash
-ast-grep scan --no-ignore hidden --globs '!.git' -U
+ast-grep scan --no-ignore hidden --globs '!.git' --filter '^no-(comments|docstrings)-' -U
 ```
 
-It exits 1 while matches without a fix remain, such as docstrings; that's expected here. The fix deletes the comment text only, so it leaves blank lines and trailing whitespace behind, and in JSX an empty `{}` where `{/* … */}` was. Remove the empty `{}`, for each of Tsx and JavaScript the repo has, in the files the removal changed and nowhere else:
+`--filter` keeps the fixes to the guard's rules, as for the ledger. It exits 1 while matches without a fix remain, such as docstrings; that's expected here. The fix deletes the comment text only, so it leaves blank lines and trailing whitespace behind, and in JSX an empty `{}` where `{/* … */}` was. Remove the empty `{}`, for each of Tsx and JavaScript the repo has, in the files the removal changed and nowhere else:
 
 ```bash
 git diff --name-only -z <snap> | xargs -0 -r ast-grep scan --inline-rules '{id: empty-jsx, language: <Tsx|JavaScript>, rule: {kind: jsx_expression, regex: "^\\{\\s*\\}$"}, fix: ""}' -U
@@ -300,7 +313,7 @@ It touches only where text was removed since the snapshot: the whitespace and bl
 
 `-U` doesn't touch docstrings, because `no-docstrings-python` has no `fix`: removing one can leave a function or class with an empty body, which is a syntax error. Remove each by hand, adding `...` only where the body would otherwise be empty.
 
-Unguarded comments the user chose to remove (Ask once): remove them by hand now. For embedded ones, find each by its text from `comments-embedded.jsonl`, not by its recorded line.
+Unguarded comments the user chose to remove (Ask once): remove them by hand now. Find each by its text from `comments-unguarded.jsonl`, not by its recorded line.
 
 ## 6. Verify
 
@@ -336,8 +349,8 @@ ast-grep <version>, pinned via <how>
 - `<file>` — <command or CI step>
 
 ## Cleanup
-<n> comments removed across <m> files. Formatter: <command, or "none">; then tidy.py.
-Ledger: <absolute path to removed-comments.jsonl>, <n> rows; plus comments-embedded.jsonl, <n> rows, if any.
+<n> comments removed across <m> files. tidy.py, then formatter: <command, or "none">.
+Ledger: <absolute path to removed-comments.jsonl>, <n> rows; plus comments-unguarded.jsonl, <n> rows, if any. Base: <base sha>.
 
 ## Unguarded
 - <file type or embedded code> — <count> files, <count> comments — <removed by hand | left>
@@ -356,7 +369,7 @@ End by offering to go through what the removed comments knew (section 8). The le
 
 The setup is done; this part is a conversation. Some removed comments held facts the code doesn't: an external constraint, a unit, a known bug. Where those go is the user's call, so don't decide it, and don't start until the user says to. What this section fixes is how the ledger is sorted and in what order it's put to the user.
 
-Read each row in context from `git show HEAD:<path>`: the ledger's lines are `HEAD`'s, and the comments are gone from the working tree. Check what it says against the code as it is now, then sort it into one category:
+Read each row in context from `git show <base>:<path>`: the comments are gone from the working tree, and `HEAD` moves once the user commits. Check what it says against the code as it is now, then sort it into one category:
 
 | Category | What it is |
 | -------- | ---------- |

@@ -276,19 +276,74 @@ out="$(cd "$tpl" && ast-grep test --skip-snapshot-tests 2>&1)"
 [ -n "$doc_test" ] && echo "$out" | grep -q '1 passed; 0 failed' && ok "docstring rule passes its fixed test" \
   || bad "docstring rule test" "$(echo "$out" | tail -3)"
 
-echo "ledger"
-ledger_cmd="$(grep -m1 'removed-comments.jsonl$' "$SKILL" | sed "s|<scratchpad>|$WORK|")"
-mkdir -p "$WORK/led/rules"
-printf 'ruleDirs: [rules]\n' > "$WORK/led/sgconfig.yml"
-printf 'id: c\nlanguage: Python\nseverity: error\nrule:\n  kind: comment\n  not: { regex: "^# noqa: E501$" }\nfix: ""\n' > "$WORK/led/rules/c.yml"
-mkdir -p "$WORK/led/.github"
-printf '# a\nx = 1  # noqa: E501\n' > "$WORK/led/a.py"
-printf 'y = 2  # b\n' > "$WORK/led/.github/b.py"
-(cd "$WORK/led" && eval "$ledger_cmd") >/dev/null 2>&1
-got="$(wc -l < "$WORK/removed-comments.jsonl" 2>/dev/null | tr -d ' ')"
-[ -n "$ledger_cmd" ] && [ "$got" = 2 ] && grep -q '"text":"# b"' "$WORK/removed-comments.jsonl" \
-  && ok "records every comment the rules match, hidden directories included, exceptions left out" \
-  || bad "ledger rows" "${got:-none}"
+echo "ledger and cleanup scope"
+ledger_cmd="$(awk '/^Then record every comment the cleanup will remove/{f=1} f && /^```bash/{g=1; next} g && /^```/{exit} g' "$SKILL")"
+cleanup_cmd="$(grep -m1 "^ast-grep scan .* -U$" "$SKILL")"
+led="$WORK/le,d"
+mkdir -p "$led/rules" "$led/.github" "$WORK/ls"
+git -C "$led" init -q
+printf 'ruleDirs: [rules]\n# about the config\nlanguageGlobs:\n  Python: ["*.pyx"]\n' > "$led/sgconfig.yml"
+printf 'id: no-comments-python\nlanguage: Python\nseverity: error\nrule:\n  kind: comment\n  not: { regex: "^# noqa: E501$" }\nfix: ""\n' > "$led/rules/c.yml"
+printf 'id: no-comments-yaml\nlanguage: Yaml\nseverity: error\nrule: { kind: comment }\nfix: ""\n' > "$led/rules/y.yml"
+# A rule the repo already had: neither the ledger nor the cleanup may use it.
+printf 'id: prefer-two\nlanguage: Python\nseverity: error\nrule: { pattern: "x = 1" }\nfix: "x = 2"\n' > "$led/rules/other.yml"
+printf '# a\nx = 1  # noqa: E501\n' > "$led/a.py"
+printf 'y = 2  # b\n' > "$led/.github/b.py"
+printf 'z = 3  # glob\n' > "$led/d.pyx"
+printf '# ast-grep-ignore\n\n# hidden\n' > "$led/c.py"
+git -C "$led" add -A
+git -C "$led" -c user.name=t -c user.email=t@t commit -qm base
+base="$(git -C "$led" rev-parse HEAD)"
+# Edits this setup makes before the ledger: an existing config gains a line.
+mkdir -p "$led/old"
+printf 'ruleDirs:\n  - old\n  - rules\n# about the config\nlanguageGlobs:\n  Python: ["*.pyx"]\n' > "$led/sgconfig.yml"
+ledger_run="$(echo "$ledger_cmd" | sed -e "s|<scratchpad>|$WORK/ls|g" -e "s|<base>|$base|g")"
+ledger_out="$(cd "$led" && eval "$ledger_run" 2>/dev/null | tail -1)"
+rows="$(python3 -c '
+import json, sys
+for o in map(json.loads, open(sys.argv[1])):
+    print(o["file"], o["range"]["start"]["line"], o["text"])
+' "$WORK/ls/removed-comments.jsonl" 2>/dev/null | sort)"
+want="$(printf '%s\n' '.github/b.py 0 # b' 'a.py 0 # a' 'c.py 0 # ast-grep_ignore' 'c.py 2 # hidden' 'd.pyx 0 # glob' 'sgconfig.yml 1 # about the config' | sort)"
+[ -n "$ledger_cmd" ] && [ "$rows" = "$want" ] && [ "$ledger_out" = "ledger exit 0" ] \
+  && ok "ledger: base positions, hidden dirs, suppressed files, the repo's languageGlobs; exceptions and other rules left out" \
+  || bad "ledger rows" "$ledger_out: $(echo "$rows" | tr '\n' ';')"
+mv "$led/sgconfig.yml" "$led/sgconfig.bak"
+ledger_out="$(cd "$led" && eval "$ledger_run" 2>/dev/null | tail -1)"
+[ "$ledger_out" != "ledger exit 0" ] && ok "ledger reports a failed scan" || bad "ledger failure" "$ledger_out"
+mv "$led/sgconfig.bak" "$led/sgconfig.yml"
+touch "$WORK/ls/base"
+ledger_out="$(cd "$led" && eval "$ledger_run" 2>/dev/null | tail -1)"
+[ "$ledger_out" != "ledger exit 0" ] && grep -q 'ast-grep-ignore' "$led/c.py" \
+  && ok "ledger stops, real repo untouched, when the checkout fails" || bad "blocked checkout" "$ledger_out"
+rm "$WORK/ls/base"
+plain="$WORK/plain"
+mkdir -p "$plain/rules"
+git -C "$plain" init -q
+printf 'ruleDirs: [rules]\n' > "$plain/sgconfig.yml"
+cp "$led/rules/c.yml" "$plain/rules/c.yml"
+printf 'x = 1  # a\n' > "$plain/a.py"
+git -C "$plain" add -A
+git -C "$plain" -c user.name=t -c user.email=t@t commit -qm base
+plain_run="$(echo "$ledger_cmd" | sed -e "s|<scratchpad>|$WORK/lp|g" -e "s|<base>|$(git -C "$plain" rev-parse HEAD)|g")"
+mkdir -p "$WORK/lp"
+# This test runs under pipefail, where a bare `git grep` finding nothing fails the pipeline.
+ledger_out="$(cd "$plain" && eval "$plain_run" 2>/dev/null | tail -1)"
+[ "$ledger_out" = "ledger exit 0" ] && [ "$(wc -l < "$WORK/lp/removed-comments.jsonl" | tr -d ' ')" = 1 ] \
+  && ok "ledger works with no ast-grep-ignore in the repo, under pipefail" || bad "no-token ledger" "$ledger_out"
+git -C "$led" config grep.patternType not-a-type
+ledger_out="$(set +o pipefail; cd "$led" && eval "$ledger_run" 2>/dev/null | tail -1)"
+[ "$ledger_out" != "ledger exit 0" ] && ok "ledger stops when git grep fails, without pipefail" || bad "grep failure" "$ledger_out"
+git -C "$led" config --unset grep.patternType
+mkdir -p "$WORK/noperl"
+printf '#!/bin/sh\nexit 42\n' > "$WORK/noperl/perl"; chmod +x "$WORK/noperl/perl"
+ledger_out="$(cd "$led" && PATH="$WORK/noperl:$PATH" eval "$ledger_run" 2>/dev/null | tail -1)"
+[ "$ledger_out" != "ledger exit 0" ] && ok "ledger stops when it can't unhide suppressed files" || bad "perl failure" "$ledger_out"
+git -C "$led" worktree list | grep -q "$WORK/ls/base" && bad "ledger removes its worktree" "still listed" \
+  || ok "ledger removes its worktree"
+(cd "$led" && eval "$cleanup_cmd") >/dev/null 2>&1
+[ -n "$cleanup_cmd" ] && [ "$(cat "$led/a.py")" = "$(printf '\nx = 1  # noqa: E501')" ] \
+  && ok "cleanup applies only the guard's fixes" || bad "cleanup scope" "$(cat "$led/a.py")"
 
 echo "fix: '' removes comment text only"
 mkdir -p "$WORK/fix"
