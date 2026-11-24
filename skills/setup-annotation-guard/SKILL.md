@@ -17,8 +17,24 @@ The guard is ast-grep, not this skill. Everything an agent is allowed to write l
 - The target is a git repo with a clean working tree. Dirty → stop and ask; the cleanup in section 5 must be its own diff.
 - The guard isn't installed yet. This skill runs once per repo. `no-comments-*` rules already present → stop, and tell the user the guard is in place; changes to it from here on are edits to its rule files, reviewed like any other diff.
 - ast-grep runs as `ast-grep`. Never as `sg`: on Linux that name is the setgroups command.
+- The scripts in `${CLAUDE_SKILL_DIR}/scripts/` do every multi-step part of this skill. Run each exactly as shown: they run under bash whatever your shell is, and read and write their state in `<scratchpad>`, so no sha or variable has to be carried from one command to the next. They call `ast-grep` from PATH; with one installed in your scratchpad, start the command with `PATH="<scratchpad>/ast-grep/node_modules/.bin:$PATH"`.
 - The inventory needs ast-grep before the user picks how to pin it. Use the one on PATH. None → install one into your scratchpad, outside the repo (`npm install --prefix <scratchpad>/ast-grep @ast-grep/cli@<version>`), and say so in the reply. Prefer 0.39.5, the version this skill's tables were checked against.
-- Find the repo's own commands for build, typecheck, lint, and test (package scripts, Makefile, CI config). Run all four now and record each command, exit status, and pass/fail counts. This is the baseline section 6 compares against. A command that fails now is noted, not fixed. A command the repo doesn't have is recorded as absent. Record `git rev-parse HEAD` too: that's `<base>`, the revision the ledger (section 3) refers to, and it stays put when the user commits.
+- Find the repo's own commands for build, typecheck, lint, and test (package scripts, Makefile, CI config), and write them to `<scratchpad>/checks.txt`, one line each, in this order, `absent` for one the repo doesn't have:
+
+  ```
+  build: npm run build
+  typecheck: npm run typecheck
+  lint: absent
+  test: npm test
+  ```
+
+  Then record the baseline section 6 compares against, and `<base>`, the revision the ledger (section 3) refers to, which stays put when the user commits. `<base>` from here on is the sha this saves in `<scratchpad>/base`:
+
+  ```bash
+  git rev-parse HEAD > <scratchpad>/base && bash "${CLAUDE_SKILL_DIR}/scripts/checks.sh" <scratchpad>/checks.txt <scratchpad>/before
+  ```
+
+  It prints each check's exit status and saves its output to `<scratchpad>/before/<name>.log`; read the pass/fail counts there. A check that fails now is noted, not fixed.
 
 ## 1. Inventory
 
@@ -48,13 +64,7 @@ Code embedded in another language is a separate case:
 
 Unparseable files and invisible embedded code both go in the reply under Unguarded. Whether their existing comments go is the user's call (Ask once). Run section 2's directive check over them too: unguarded files hold tool directives like any other (`--> statement-breakpoint` in a Drizzle migration, `-- +goose Up`, `# syntax=docker/dockerfile:1`), and removing one breaks the tool. Migrations are better left alone entirely. If the user chooses to remove unguarded comments, extract every one into `<scratchpad>/comments-unguarded.jsonl` right after Ask once, before any file is edited: one object per comment with its file, line, and full text. Section 5 removes each by its text, not its line.
 
-Find any `ast-grep-ignore` already in the repo, and record each line:
-
-```bash
-{ git grep -n -G 'ast-grep[-]ignore' > <scratchpad>/suppressions.txt || [ $? = 1 ]; }; echo "exit $?"
-```
-
-Anything but `exit 0` is a failure. It hides comments from every scan, and section 4 bans it everywhere. The ledger (section 3) neutralizes it in its own copy, so the comments it hid are recorded; section 5 deletes it, in ignored paths too, where the ledger's scan doesn't look. So this file is part of the ledger.
+Find any `ast-grep-ignore` already in the repo (`git grep -n 'ast-grep[-]ignore'`). It hides comments from every scan, and section 4 bans it everywhere. The ledger (section 3) records each such line and the comments it hid; section 5 deletes it, in ignored paths too.
 
 Markdown is prose, not code: leave it out of the inventory and the counts. Its `#` lines are headings, not comments.
 
@@ -107,7 +117,7 @@ Batch these into one AskUserQuestion call, after the inventory and before writin
 - **Directives the inventory found that aren't in the table above.** Show each, with a count and one example, and ask which a tool actually reads.
 
 Not a question: a directive in the table whose tool isn't configured in this repo (`eslint-disable-next-line` with no ESLint). Section 2 already decides it: it goes with the other comments. List each such group in the reply.
-- **How to pin ast-grep** in this repo: a dev dependency (`@ast-grep/cli` in npm, `ast-grep-cli` in pip), or a pinned install in CI only. Pin an exact version; node kind names can change between releases. Installing a dev dependency rewrites the manifest (`npm install -D -E` reflows `package.json`'s arrays); check its diff afterwards and put back any formatting change that isn't the new dependency. A version other than the one used for the inventory → re-run section 1's probe on it before writing rules.
+- **How to pin ast-grep** in this repo: a dev dependency (`@ast-grep/cli` in npm, `ast-grep-cli` in pip), or a pinned install in CI only. Pin an exact version; node kind names can change between releases. Installing a dev dependency rewrites the manifest (`npm install -D -E` reflows `package.json`'s arrays). Afterwards the manifest's diff must be the dependency line and nothing else: put back every other change exactly as it was. A version other than the one used for the inventory → re-run section 1's probe on it before writing rules.
 
 ## 3. Write the rules
 
@@ -232,7 +242,7 @@ Every rule gets a test file, built from this table and nothing else, so two runs
 
 In this order, skipping an empty cell:
 
-- `valid`: the string; then each exception, in section 2's table order, once per listed value, on the line before `<s>`. An exception that allows a run (the TypeScript references) also gets all its values in a row. Doc comments kept (Ask once) → the doc case goes here instead of in `invalid`. HTML also gets `<textarea><!-- x --></textarea>`, right after the string.
+- `valid`: the string; then each exception, in section 2's table order, once per listed value, on the line before `<s>`. An exception that allows a run (the TypeScript references) and lists two or more values also gets all of them in a row; with one value, that case would repeat the one before, so it's left out. Doc comments kept (Ask once) → the doc case goes here instead of in `invalid`. HTML also gets `<textarea><!-- x --></textarea>`, right after the string.
 - `invalid`: the line comment, then `<s>`; `<s>` and the line comment on one line; the block comment and `<s>` on one line; the doc comment, then `<s>`. Then, per exception: its slot holding `x-keep-this`; a position-bound one after `<s>`; each banned variant section 2 names for its tool (`# noqa`, `@ts-ignore`, `eslint-disable` without a rule).
 
 Write every case as a `|` block scalar. Unquoted, `: ` makes YAML read a case as a map and `#` starts a YAML comment. `ast-grep-ignore` stays out: section 4 bans it everywhere, test files included. The docstring rule's test is fixed:
@@ -257,22 +267,15 @@ invalid:
 ast-grep test --skip-snapshot-tests
 ```
 
-Then record every comment the cleanup will remove. Scan a checkout of `<base>`, not the working tree, so every position is `<base>`'s whatever this setup has edited, with the repo's own `sgconfig.yml`, so its rules and settings (`languageGlobs` and the like) apply as they will in cleanup:
+Then record every comment the cleanup will remove:
 
 ```bash
-git worktree add --detach <scratchpad>/base <base> &&
-(cd <scratchpad>/base &&
- { git grep -lz -G 'ast-grep[-]ignore' > <scratchpad>/suppressed || [ $? = 1 ]; } &&
- xargs -0 -r perl -pi -e 's/ast-grep-ignore/ast-grep_ignore/g' < <scratchpad>/suppressed &&
- ast-grep scan -c "$OLDPWD/sgconfig.yml" --no-ignore hidden --globs '!.git' --filter '^no-(comments|docstrings)-' --info --json=stream) > <scratchpad>/removed-comments.jsonl
-ledger_rc=$?
-git worktree remove --force <scratchpad>/base
-echo "ledger exit $ledger_rc"
+bash "${CLAUDE_SKILL_DIR}/scripts/ledger.sh" <scratchpad>
 ```
 
-Each step runs only if the one before it succeeded, so nothing touches the real repo if the checkout fails; `git grep` finding nothing counts as success, and no pipe hides a failure, whatever the shell's options. `--info` lowers every match to info, so the scan exits 0 when it only found comments. Anything but `ledger exit 0` is a failure: stop, and don't remove a comment the ledger hasn't recorded.
+It scans a worktree of `<base>`, not the working tree, so every position is `<base>`'s whatever this setup has edited, with the repo's own `sgconfig.yml`, so its rules and settings (`languageGlobs` and the like) apply as they will in cleanup. `--filter` keeps it to the guard's rules; a repo that already had ast-grep rules keeps their matches out. Anything but `ledger exit 0` is a failure: stop, and don't remove a comment the ledger hasn't recorded.
 
-This is the ledger: one object per match, with its file, position, and full text. With `comments-unguarded.jsonl` (section 1), it's what section 8 works from. `--filter` keeps it to the guard's rules; a repo that already had ast-grep rules keeps their matches out. The `perl` line breaks any `ast-grep-ignore` in the copy, so the comments it hid are recorded; its own row reads `ast-grep_ignore`.
+This is the ledger: `removed-comments.jsonl`, one object per match, with its file, position, and full text, and `suppressions.txt`, each `ast-grep-ignore` line. The script breaks every `ast-grep-ignore` in its copy, so the comments it hid are recorded; its own row reads `ast-grep_ignore`. With `comments-unguarded.jsonl` (section 1), it's what section 8 works from.
 
 ## 4. Wire it in
 
@@ -299,36 +302,15 @@ The ledger from section 3 holds every comment this removes, so nothing is read o
 
 Delete each `ast-grep-ignore` section 1 found, with its line if nothing else is on it. Until it's gone, the comments it hides are invisible to `-U` too.
 
-Then take a snapshot of the working tree. `git stash create` records it as a commit without touching the tree, the index, or the stash list; it prints nothing when the tree is clean, and then `HEAD` is the snapshot. Section 4's edits are in it, so nothing below mistakes them for comment removal. New untracked files, like the rule files, aren't; they hold no comments.
+Then remove the comments:
 
 ```bash
-snap="$(git stash create)"; snap="${snap:-HEAD}"; echo "$snap"
+bash "${CLAUDE_SKILL_DIR}/scripts/remove.sh" <scratchpad>
 ```
 
-Keep the printed sha; the commands below need it. Each removal is a pair: the scan with `--json=stream` records exactly what the same scan with `-U` then deletes, and tidy.py works from those records. One rule per pair: when several rules fix the same file (an HTML file's comment, `<script>`, and `<style>`), one `-U` keeps only one rule's fixes. Remove the comments, then the empty `{}` that `{/* … */}` leaves in JSX, as one block, since the numbering runs through it. `<Tsx JavaScript>` is whichever of the two the repo has; leave out the second loop if neither:
+It first records a snapshot of the working tree in `<scratchpad>/snap` (`git stash create`, which doesn't touch the tree, the index, or the stash list; `HEAD` when the tree is clean). Section 4's edits are in it, so nothing below mistakes them for comment removal. New untracked files, like the rule files, aren't; they hold no comments.
 
-```bash
-rm -f <scratchpad>/cuts-*.jsonl; n=0
-for rule in rules/*.yml; do
-  id="$(basename "$rule" .yml)"
-  case "$id" in no-comments-*|no-docstrings-*) ;; *) continue ;; esac
-  n=$((n + 1)); cuts="<scratchpad>/cuts-$(printf %02d "$n").jsonl"
-  ast-grep scan --no-ignore hidden --globs '!.git' --filter "^$id\$" --json=stream > "$cuts"
-  ast-grep scan --no-ignore hidden --globs '!.git' --filter "^$id\$" -U > /dev/null
-done
-for lang in <Tsx JavaScript>; do
-  n=$((n + 1)); cuts="<scratchpad>/cuts-$(printf %02d "$n").jsonl"
-  jsx="{id: empty-jsx, language: $lang, rule: {kind: jsx_expression, regex: '^\{\s*\}\$'}, fix: ''}"
-  git diff --name-only -z <snap> | xargs -0 -r ast-grep scan --inline-rules "$jsx" --json=stream > "$cuts"
-  git diff --name-only -z <snap> | xargs -0 -r ast-grep scan --inline-rules "$jsx" -U > /dev/null
-done
-```
-
-Rule files are named by their id. Filtering on it keeps the fixes to the guard's rules, as for the ledger. A `-U` scan exits 1 while matches without a fix remain, such as docstrings; that's expected here. The fix deletes the comment text only, so it leaves blank lines and trailing whitespace behind. The JSX rule matches only an expression container with nothing in it, so `const o = {/* x */}` keeps its `{}`. An inline rule has no `ignores`, so the changed-files list is what keeps it out of fixtures. Then:
-
-```bash
-python3 "${CLAUDE_SKILL_DIR}/scripts/tidy.py" --base <snap> <scratchpad>/cuts-*.jsonl
-```
+Each removal is a pair: a scan with `--json=stream` records exactly what the same scan with `-U` then deletes. One rule per pair, each guard rule in `rules/` by its id: when several rules fix the same file (an HTML file's comment, `<script>`, and `<style>`), one `-U` keeps only one rule's fixes, and filtering by id keeps any other rule's fixes out. The fix deletes the comment text only. Then the empty `{}` that `{/* … */}` leaves in JSX: only an expression container with nothing in it, so `const o = {/* x */}` keeps its `{}`, and only in the files the removal changed, which keeps it out of fixtures. Then `tidy.py` on those records.
 
 It touches only the lines the recorded removals cut, the same way in every language: it drops a line a removal left blank, strips the whitespace a removal left at a line's end, and merges the blank lines around a dropped one. Everything else is kept byte for byte. A file that isn't the snapshot minus those removals is skipped and named; find what changed it before going on. Exit 3 names each line to fix by hand: one where a removal joined code on either side (`return/**/1` is now `return1`) or took a line break from between code (`return /*⏎*/ 1`, where the break ended the statement), since what the comment stood for depends on the language; and one a removal left ending in a backslash, which now continues onto the next line (`#define X \/* note */`). HTML comment cuts in a file with a `<pre>` are left as `-U` made them, since in `<pre>` whitespace is content. Run the repo's formatter after tidy.py, if the repo has one.
 
@@ -340,7 +322,13 @@ Unguarded comments the user chose to remove (Ask once): remove them by hand now.
 
 All must hold. Report each with its evidence:
 
-- Build, typecheck, lint, and test give the same results as the section 0 baseline. A difference means the cleanup changed behaviour. Find the file at the failing spot and diff it against `<snap>`. A removed directive → add it to the exceptions, restore it, and re-run. Code the removal changed → put it back as it was, minus the comment, and re-run. A lint command this skill created has no baseline; report it as absent before, passing after.
+- Build, typecheck, lint, and test give the same results as the section 0 baseline. If section 4 created the lint command, put it on the `lint:` line of `<scratchpad>/checks.txt` first; then:
+
+  ```bash
+  bash "${CLAUDE_SKILL_DIR}/scripts/checks.sh" <scratchpad>/checks.txt <scratchpad>/after
+  ```
+
+  Compare each line and each log's pass/fail counts with `<scratchpad>/before`. A difference means the cleanup changed behaviour. Find the file at the failing spot and diff it against the sha in `<scratchpad>/snap`. A removed directive → add it to the exceptions, restore it, and re-run. Code the removal changed → put it back as it was, minus the comment, and re-run. A lint command this skill created has no baseline; report it as absent before, passing after.
 - `ast-grep test --skip-snapshot-tests` passes.
 - The full lint command from section 4 passes on the cleaned repo.
 - The guard catches the file-level bypass: put a comment containing `ast-grep-ignore`, a blank line, and another comment in a new, unstaged file in the repo, and run the repo's lint target (not the bare command). An exit code alone proves nothing; it could fail for another reason. It must fail with `git grep` printing that file's line. Then delete the `ast-grep-ignore` line from the same file and run it again: now the scan must report the other comment. Delete the file.

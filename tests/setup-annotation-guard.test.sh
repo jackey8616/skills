@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Tests for the ast-grep claims in skills/setup-annotation-guard/SKILL.md.
 # Offline, but needs an ast-grep binary: on PATH, or named by $AST_GREP.
-# The comment-kinds table, the docstring rule, and the lint command are read
-# from SKILL.md itself, so the skill and these tests can't drift apart.
+# The comment-kinds table, the docstring rule, the lint command, and the
+# command lines for scripts/ledger.sh, remove.sh, and checks.sh are read from
+# SKILL.md itself, so the skill and these tests can't drift apart.
 #
 #   bash tests/setup-annotation-guard.test.sh
 #   AST_GREP=/path/to/ast-grep bash tests/setup-annotation-guard.test.sh
@@ -29,6 +30,13 @@ mkdir -p "$WORK/bin"
 ln -s "$sg_bin" "$WORK/bin/ast-grep"
 export PATH="$WORK/bin:$PATH"
 echo "ast-grep $(ast-grep --version | awk '{print $2}')"
+
+# skill_cmd <script> <scratchpad> — SKILL.md's command line for one of its
+# scripts, with the placeholders filled in.
+skill_cmd() {
+  grep -m1 "scripts/$1\"" "$SKILL" | sed -e 's/^ *//' -e "s|<scratchpad>|$2|g" \
+    -e "s|\${CLAUDE_SKILL_DIR}|$ROOT/skills/setup-annotation-guard|g"
+}
 
 # count <lang> <file> <rule> — number of matches of an inline rule.
 count() {
@@ -185,17 +193,12 @@ got="$(ast-grep scan -r "$WORK/html.yml" --json=stream "$WORK/text.html" 2>/dev/
   || bad "HTML text elements" "$got"
 
 echo "removal pairs and tidy, end to end"
-removal="$(awk '/One rule per pair/{f=1} f && /^```bash/{g=1; next} g && /^```/{exit} g' "$SKILL")"
-tidy_cmd="$(grep -m1 'scripts/tidy.py" --base' "$SKILL")"
-[ -n "$removal" ] && [ -n "$tidy_cmd" ] || bad "removal block and tidy command found in SKILL.md" "nothing"
-# run_removal <repo> <langs> — SKILL.md's removal block, then its tidy command.
+# run_removal <repo> — SKILL.md's remove.sh command, run in <repo>.
 run_removal() {
-  local snap langs="$2"; snap="$(git -C "$1" stash create)"; snap="${snap:-HEAD}"
-  sub() { echo "$1" | sed -e "s|<snap>|$snap|g" -e "s|<scratchpad>|$WORK/cuts|g" -e "s|<Tsx JavaScript>|$langs|g" \
-    -e "s|\${CLAUDE_SKILL_DIR}|$ROOT/skills/setup-annotation-guard|g"; }
   mkdir -p "$WORK/cuts"
-  (cd "$1" && bash -c "$(sub "$removal")" >/dev/null 2>&1; bash -c "$(sub "$tidy_cmd")")
+  (cd "$1" && bash -c "$(skill_cmd remove.sh "$WORK/cuts")")
 }
+[ -n "$(skill_cmd remove.sh x)" ] || bad "remove.sh command found in SKILL.md" "nothing"
 jsx="$WORK/jsx"
 mkdir -p "$jsx/fixtures" "$jsx/rules"
 git -C "$jsx" init -q
@@ -211,7 +214,7 @@ printf '<!-- h -->\n<style>\n/* c */\na:hover {}\n</style>\n<script>\n// d\nf();
 printf 'const v = <div>{}</div>;\n' > "$jsx/fixtures/page.tsx"
 git -C "$jsx" add -A
 git -C "$jsx" -c user.name=t -c user.email=t@t commit -qm init
-rc=0; run_removal "$jsx" Tsx >/dev/null 2>"$WORK/tidy.err" || rc=$?
+rc=0; run_removal "$jsx" >/dev/null 2>"$WORK/tidy.err" || rc=$?
 [ "$rc" -eq 0 ] && ok "tidy.py exits 0" || bad "tidy.py exits 0" "exit $rc: $(cat "$WORK/tidy.err")"
 got="$(cat "$jsx/a.tsx")"
 want="$(printf 'const o = {};\nfunction f() {}\nconst v = <div><span>{x}</span></div>;\nfunction g() { return 1; }\nconst s = `a  \n`;\nconst q = 1;')"
@@ -224,6 +227,35 @@ want="$(printf '<style>\na:hover {}\n</style>\n<script>\nf();\n</script>')"
   || bad "mixed-language HTML" "$(diff <(echo "$want") <(echo "$got"))"
 [ "$(cat "$jsx/fixtures/page.tsx")" = 'const v = <div>{}</div>;' ] \
   && ok "leaves files the comment removal didn't change" || bad "unchanged files left alone" "$(cat "$jsx/fixtures/page.tsx")"
+
+snapf="$(cat "$WORK/cuts/snap" 2>/dev/null)"
+[ -n "$snapf" ] && git -C "$jsx" cat-file -e "$snapf^{commit}" 2>/dev/null \
+  && ok "records the snapshot sha in <scratchpad>/snap" || bad "snapshot recorded" "$snapf"
+printf 'id: no-comments-bad\nlanguage: Nope\nrule: { kind: comment }\n' > "$jsx/rules/no-comments-bad.yml"
+rc=0; run_removal "$jsx" >/dev/null 2>&1 || rc=$?
+[ "$rc" = 2 ] && ok "exits 2 when ast-grep fails" || bad "ast-grep failure" "exit $rc"
+rm "$jsx/rules/no-comments-bad.yml"
+if command -v zsh >/dev/null; then
+  printf 'const z = 1; // z\n' > "$jsx/z.tsx"
+  git -C "$jsx" add z.tsx
+  git -C "$jsx" -c user.name=t -c user.email=t@t commit -qm z
+  rc=0; (cd "$jsx" && zsh -c "$(skill_cmd remove.sh "$WORK/cuts")" >/dev/null 2>&1) || rc=$?
+  [ "$rc" = 0 ] && [ "$(cat "$jsx/z.tsx")" = "const z = 1;" ] && ok "runs the same from zsh" || bad "remove.sh from zsh" "exit $rc"
+fi
+
+echo "checks.sh"
+chk="$WORK/chk"
+mkdir -p "$chk"
+printf 'build: printf "%%s\\n" a b\ntypecheck: absent\n\nlint: false\ntest: echo "3 passed"; exit 0' > "$chk/checks.txt"
+for shell in bash zsh; do
+  command -v "$shell" >/dev/null || continue
+  rm -rf "$chk/out"
+  got="$(cd "$chk" && "$shell" -c "$(skill_cmd checks.sh "$chk" | sed -e "s|git rev-parse HEAD > $chk/base && ||" -e "s|$chk/before|$chk/out|")")"
+  want="$(printf 'build  exit 0\ntypecheck  absent\nlint  exit 1\ntest  exit 0')"
+  [ "$got" = "$want" ] && [ "$(cat "$chk/out/build.log")" = "$(printf 'a\nb')" ] && [ "$(cat "$chk/out/test.log")" = "3 passed" ] \
+    && ok "$shell: every check run with bash, absent ones named, status and output recorded" \
+    || bad "checks.sh from $shell" "$got"
+done
 
 echo "docstring rule"
 doc_rule="$(awk '/When Python docstrings are banned/{f=1} f && /^```yaml/{g=1; next} g && /^```/{exit} g' "$SKILL")"
@@ -317,7 +349,7 @@ out="$(cd "$tpl" && ast-grep test --skip-snapshot-tests 2>&1)"
   || bad "docstring rule test" "$(echo "$out" | tail -3)"
 
 echo "ledger and cleanup scope"
-ledger_cmd="$(awk '/^Then record every comment the cleanup will remove/{f=1} f && /^```bash/{g=1; next} g && /^```/{exit} g' "$SKILL")"
+ledger_cmd="$(skill_cmd ledger.sh "$WORK/ls")"
 led="$WORK/le,d"
 mkdir -p "$led/rules" "$led/.github" "$WORK/ls"
 git -C "$led" init -q
@@ -336,7 +368,8 @@ base="$(git -C "$led" rev-parse HEAD)"
 # Edits this setup makes before the ledger: an existing config gains a line.
 mkdir -p "$led/old"
 printf 'ruleDirs:\n  - old\n  - rules\n# about the config\nlanguageGlobs:\n  Python: ["*.pyx"]\n' > "$led/sgconfig.yml"
-ledger_run="$(echo "$ledger_cmd" | sed -e "s|<scratchpad>|$WORK/ls|g" -e "s|<base>|$base|g")"
+echo "$base" > "$WORK/ls/base"
+ledger_run="$ledger_cmd"
 ledger_out="$(cd "$led" && eval "$ledger_run" 2>/dev/null | tail -1)"
 rows="$(python3 -c '
 import json, sys
@@ -351,11 +384,11 @@ mv "$led/sgconfig.yml" "$led/sgconfig.bak"
 ledger_out="$(cd "$led" && eval "$ledger_run" 2>/dev/null | tail -1)"
 [ "$ledger_out" != "ledger exit 0" ] && ok "ledger reports a failed scan" || bad "ledger failure" "$ledger_out"
 mv "$led/sgconfig.bak" "$led/sgconfig.yml"
-touch "$WORK/ls/base"
+touch "$WORK/ls/base-tree"
 ledger_out="$(cd "$led" && eval "$ledger_run" 2>/dev/null | tail -1)"
 [ "$ledger_out" != "ledger exit 0" ] && grep -q 'ast-grep-ignore' "$led/c.py" \
   && ok "ledger stops, real repo untouched, when the checkout fails" || bad "blocked checkout" "$ledger_out"
-rm "$WORK/ls/base"
+rm "$WORK/ls/base-tree"
 plain="$WORK/plain"
 mkdir -p "$plain/rules"
 git -C "$plain" init -q
@@ -364,8 +397,9 @@ cp "$led/rules/c.yml" "$plain/rules/c.yml"
 printf 'x = 1  # a\n' > "$plain/a.py"
 git -C "$plain" add -A
 git -C "$plain" -c user.name=t -c user.email=t@t commit -qm base
-plain_run="$(echo "$ledger_cmd" | sed -e "s|<scratchpad>|$WORK/lp|g" -e "s|<base>|$(git -C "$plain" rev-parse HEAD)|g")"
 mkdir -p "$WORK/lp"
+git -C "$plain" rev-parse HEAD > "$WORK/lp/base"
+plain_run="$(skill_cmd ledger.sh "$WORK/lp")"
 # This test runs under pipefail, where a bare `git grep` finding nothing fails the pipeline.
 ledger_out="$(cd "$plain" && eval "$plain_run" 2>/dev/null | tail -1)"
 [ "$ledger_out" = "ledger exit 0" ] && [ "$(wc -l < "$WORK/lp/removed-comments.jsonl" | tr -d ' ')" = 1 ] \
@@ -377,14 +411,14 @@ git -C "$led" config --unset grep.patternType
 if command -v zsh >/dev/null; then
   rm -f "$WORK/lp/removed-comments.jsonl"
   ledger_out="$(cd "$plain" && zsh -c "$plain_run" 2>/dev/null | tail -1)"
-  [ "$ledger_out" = "ledger exit 0" ] && ! git -C "$plain" worktree list | grep -q "$WORK/lp/base" \
+  [ "$ledger_out" = "ledger exit 0" ] && ! git -C "$plain" worktree list | grep -q "$WORK/lp/base-tree" \
     && ok "ledger runs in zsh and removes its worktree" || bad "ledger in zsh" "$ledger_out"
 fi
 mkdir -p "$WORK/noperl"
 printf '#!/bin/sh\nexit 42\n' > "$WORK/noperl/perl"; chmod +x "$WORK/noperl/perl"
 ledger_out="$(cd "$led" && PATH="$WORK/noperl:$PATH" eval "$ledger_run" 2>/dev/null | tail -1)"
 [ "$ledger_out" != "ledger exit 0" ] && ok "ledger stops when it can't unhide suppressed files" || bad "perl failure" "$ledger_out"
-git -C "$led" worktree list | grep -q "$WORK/ls/base" && bad "ledger removes its worktree" "still listed" \
+git -C "$led" worktree list | grep -q "$WORK/ls/base-tree" && bad "ledger removes its worktree" "still listed" \
   || ok "ledger removes its worktree"
 
 echo "fix: '' removes comment text only"
@@ -402,27 +436,28 @@ got="$(cat "$WORK/fix/a.py")"
   || bad "comment text removed" "$(printf '%s' "$got" | od -c | head -3)"
 
 echo "suppression record"
-supp_cmd="$(awk '/^Find any `ast-grep-ignore` already in the repo/{f=1} f && /^```bash/{g=1; next} g && /^```/{exit} g' "$SKILL")"
-[ -n "$supp_cmd" ] || bad "suppression command found in SKILL.md" "nothing"
 sup="$WORK/sup"
-mkdir -p "$sup/vendor"
+mkdir -p "$sup/vendor" "$sup/rules" "$WORK/sp"
 git -C "$sup" init -q
+printf 'ruleDirs: [rules]\n' > "$sup/sgconfig.yml"
+printf 'id: no-comments-python\nlanguage: Python\nseverity: error\nignores: ["vendor/**"]\nrule: { kind: comment }\nfix: ""\n' > "$sup/rules/c.yml"
 printf 'x = 1\n' > "$sup/a.py"
-git -C "$sup" add -A
-for shell in bash zsh; do
-  command -v "$shell" >/dev/null || continue
-  out="$(cd "$sup" && "$shell" -c "set -o pipefail; $(echo "$supp_cmd" | sed "s|<scratchpad>|$WORK|g")")"
-  [ "$out" = "exit 0" ] && [ ! -s "$WORK/suppressions.txt" ] && ok "$shell: no token, exit 0 and an empty record" \
-    || bad "$shell: no token" "$out"
-done
 printf '# ast-grep-ignore\n\n# hidden\n' > "$sup/vendor/a.py"
 git -C "$sup" add -A
-out="$(cd "$sup" && bash -c "$(echo "$supp_cmd" | sed "s|<scratchpad>|$WORK|g")")"
-[ "$out" = "exit 0" ] && [ "$(cat "$WORK/suppressions.txt")" = "vendor/a.py:1:# ast-grep-ignore" ] \
-  && ok "records the token's line in a path the rules ignore" || bad "records the token" "$out: $(cat "$WORK/suppressions.txt")"
-git -C "$sup" config grep.patternType not-a-type
-out="$(cd "$sup" && bash -c "$(echo "$supp_cmd" | sed "s|<scratchpad>|$WORK|g")" 2>/dev/null)"
-[ "$out" != "exit 0" ] && ok "a grep error isn't exit 0" || bad "grep error reported" "$out"
+git -C "$sup" -c user.name=t -c user.email=t@t commit -qm base
+git -C "$sup" rev-parse HEAD > "$WORK/sp/base"
+out="$(cd "$sup" && zsh -c "$(skill_cmd ledger.sh "$WORK/sp")" 2>/dev/null | tail -1)"
+[ "$out" = "ledger exit 0" ] && [ "$(cat "$WORK/sp/suppressions.txt")" = "vendor/a.py:1:# ast-grep-ignore" ] \
+  && [ ! -s "$WORK/sp/removed-comments.jsonl" ] \
+  && ok "records the token's line in a path the rules ignore, where the scan records nothing" \
+  || bad "records the token" "$out: $(cat "$WORK/sp/suppressions.txt")"
+rm "$sup/vendor/a.py"
+git -C "$sup" add -A
+git -C "$sup" -c user.name=t -c user.email=t@t commit -qm clean
+git -C "$sup" rev-parse HEAD > "$WORK/sp/base"
+out="$(cd "$sup" && bash -o pipefail -c "$(skill_cmd ledger.sh "$WORK/sp")" 2>/dev/null | tail -1)"
+[ "$out" = "ledger exit 0" ] && [ ! -s "$WORK/sp/suppressions.txt" ] && ok "no token: exit 0 and an empty record" \
+  || bad "no token" "$out"
 
 echo "lint command"
 lint="$(awk '/^## 4\./{f=1} f && /^```bash/{g=1; next} g && /^```/{exit} g' "$SKILL")"
