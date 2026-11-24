@@ -17,22 +17,32 @@ works on lines only, in every language alike:
   joined, so two blank lines between Python definitions stay two;
 - removes blank lines a removal left at the top of the file.
 
+HTML comment cuts in a file that has a `<pre>` anywhere are left as -U
+made them: in `<pre>` every space and line is content, and telling from
+the text alone whether a cut is inside one isn't reliable. (CSS
+`white-space: pre` on another element can't be seen from the file.)
+
 Every other line is kept byte for byte, line ending included. A file whose
 current text isn't exactly REV's with the recorded ranges removed is
 skipped and reported. Two kinds of line are named for fixing by hand, and
 the exit status is 3: one where a removal joined the code on either side
-(`return/**/1`, but not next to a bracket, comma, or semicolon), since
-what whitespace the comment stood for depends on the language, and one a removal left ending in a backslash, which now
+(`return/**/1`, but not next to a bracket, comma, or semicolon), or took a
+line break from between code (`return /*⏎*/ 1`, where the break ends the
+statement), since what the comment stood for depends on the language; and one a removal left ending in a backslash, which now
 continues onto the next line. Empty JSX `{}` joins nothing, so its
 removal is never named.
 """
 import argparse
 import json
+import re
 import subprocess
 import sys
 from collections import defaultdict
 
 DROP = object()
+INLINE, BREAK, HTML = "inline", "break", "html"
+LINE_TERMINATORS = "\n\r\u2028\u2029"
+PRE = re.compile(r"<pre\b", re.IGNORECASE)
 
 
 class Named(str):
@@ -80,28 +90,35 @@ def load(paths):
                 offsets = match.get("replacementOffsets")
                 if offsets is None or match.get("replacement") != "":
                     continue
-                joins = match["ruleId"] != "empty-jsx"
-                ranges[match["file"]].append((offsets["start"], offsets["end"], joins))
+                if match["ruleId"] == "empty-jsx":
+                    kind = None
+                elif match.get("language", "").lower() == "html":
+                    kind = HTML
+                elif any(c in match["text"] for c in LINE_TERMINATORS):
+                    kind = BREAK
+                else:
+                    kind = INLINE
+                ranges[match["file"]].append((offsets["start"], offsets["end"], kind))
         passes.append(ranges)
     return passes
 
 
 def apply(old, passes):
     """REV's bytes with each pass's ranges removed, and where each cut landed,
-    with whether a cut there can join code."""
+    with the kind of text it removed."""
     text, points = old, []
     for ranges in passes:
         ranges = sorted(ranges)
         out, moved, pos, removed = [], [], 0, 0
-        for start, end, joins in ranges:
+        for start, end, kind in ranges:
             if start < pos:
                 return None, None
             out.append(text[pos:start])
-            moved.append((start - removed, joins))
+            moved.append((start - removed, kind))
             removed += end - start
             pos = end
         out.append(text[pos:])
-        for point, joins in points:
+        for point, kind in points:
             shift, landed = 0, None
             for start, end, outer in ranges:
                 if point <= start:
@@ -110,16 +127,19 @@ def apply(old, passes):
                     landed = (start - shift, outer)
                     break
                 shift += end - start
-            moved.append(landed or (point - shift, joins))
+            moved.append(landed or (point - shift, kind))
         text, points = b"".join(out), moved
     return text, points
 
 
 def tidy(new, points):
     lines = lines_of(new)
-    at = defaultdict(bool)
-    for point, joins in points:
-        at[point] |= joins
+    at = defaultdict(set)
+    pre = PRE.search(new)
+    for point, kind in points:
+        if kind == HTML and pre:
+            continue
+        at[point].add(kind)
     out, start = [], 0
     for line in lines:
         end = start + len(line) - len(ending(line))
@@ -142,7 +162,11 @@ def tidy(new, points):
                     reason = "a removal left it ending in a backslash"
             for p in here:
                 i = p - start
-                if at[p] and 0 < i < len(body) and fuses(body[i - 1], body[i]):
+                if not 0 < i < len(body) or not body[:i].strip() or not body[i:].strip():
+                    continue
+                if BREAK in at[p]:
+                    reason = "a removal took a line break from between code"
+                elif at[p] - {None} and fuses(body[i - 1], body[i]):
                     reason = "a removal joined the code on either side"
             if reason:
                 out.append(Named(body + ending(line)))
@@ -201,7 +225,7 @@ def main():
                 print(f"skipped  {path} (not {args.base} minus the recorded removals)", file=sys.stderr)
                 continue
             new = current.decode("utf-8")
-            points = [(len(current[:p].decode("utf-8")), joins) for p, joins in byte_points]
+            points = [(len(current[:p].decode("utf-8")), kind) for p, kind in byte_points]
         except (subprocess.CalledProcessError, UnicodeDecodeError, FileNotFoundError):
             print(f"skipped  {path}", file=sys.stderr)
             continue

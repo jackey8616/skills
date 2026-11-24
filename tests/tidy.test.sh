@@ -209,6 +209,22 @@ expect "drops a line an HTML comment filled, like any other" u.html \
 </head>
 ' 'no-comments-html::<!-- note -->'
 
+expect "leaves HTML comment cuts as -U made them in a file with a <pre>" w.html \
+'<PRE><span title="</pre>">first</span>
+<!-- x -->
+second··<!-- y -->
+</PRE>
+<!-- after -->
+<p>b</p>
+' \
+'<PRE><span title="</pre>">first</span>
+
+second··
+</PRE>
+
+<p>b</p>
+' 'no-comments-html::<!-- x -->' 'no-comments-html::<!-- y -->' 'no-comments-html::<!-- after -->'
+
 expect "follows a cut through a second pass (empty JSX)" q.tsx \
 'const e = <b>a{/* x */}b</b>;
 ' \
@@ -282,6 +298,20 @@ if [ "$rc" -eq 3 ] && echo "$out" | grep -q '^check    jn.tsx:1 (a removal joine
   ok "exit 3, return1 named; foo(1) and the JSX text {} joined are not"
 else
   bad "names a removal that joins code" "exit $rc: $out"
+fi
+
+echo "a removal that takes a line break from between code is named"
+printf 'function f() { return /* why\n*/ 1; }\nx = 1; /* a\n  b */\ny = 2;\n' > "$WORK/br.js"
+git -C "$WORK" add br.js
+git -C "$WORK" commit -qm br
+(cd "$WORK" && remove br.js cuts-br "$(printf '/* why\n*/')" "$(printf '/* a\n  b */')" >/dev/null)
+rc=0
+out="$(cd "$WORK" && python3 "$TIDY" --base HEAD cuts-br.0.jsonl 2>&1)" || rc=$?
+if [ "$rc" -eq 3 ] && echo "$out" | grep -q '^check    br.js:1 (a removal took a line break' && ! echo "$out" | grep -q 'br.js:[23] ' \
+  && [ "$(cat "$WORK/br.js")" = "$(printf 'function f() { return  1; }\nx = 1;\ny = 2;')" ]; then
+  ok "exit 3, return  1 named; a multi-line comment at a line's end not"
+else
+  bad "names a line break taken from between code" "exit $rc: $out"
 fi
 
 echo "a file the cuts don't explain is skipped"

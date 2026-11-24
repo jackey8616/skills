@@ -48,7 +48,13 @@ Code embedded in another language is a separate case:
 
 Unparseable files and invisible embedded code both go in the reply under Unguarded. Whether their existing comments go is the user's call (Ask once). Run section 2's directive check over them too: unguarded files hold tool directives like any other (`--> statement-breakpoint` in a Drizzle migration, `-- +goose Up`, `# syntax=docker/dockerfile:1`), and removing one breaks the tool. Migrations are better left alone entirely. If the user chooses to remove unguarded comments, extract every one into `<scratchpad>/comments-unguarded.jsonl` right after Ask once, before any file is edited: one object per comment with its file, line, and full text. Section 5 removes each by its text, not its line.
 
-Find any `ast-grep-ignore` already in the repo (`git grep -n 'ast-grep[-]ignore'`). It hides comments from every scan, and section 4 bans it. The ledger (section 3) neutralizes it in its own copy; section 5 deletes it.
+Find any `ast-grep-ignore` already in the repo, and record each line:
+
+```bash
+{ git grep -n -G 'ast-grep[-]ignore' > <scratchpad>/suppressions.txt || [ $? = 1 ]; }; echo "exit $?"
+```
+
+Anything but `exit 0` is a failure. It hides comments from every scan, and section 4 bans it everywhere. The ledger (section 3) neutralizes it in its own copy, so the comments it hid are recorded; section 5 deletes it, in ignored paths too, where the ledger's scan doesn't look. So this file is part of the ledger.
 
 Markdown is prose, not code: leave it out of the inventory and the counts. Its `#` lines are headings, not comments.
 
@@ -150,6 +156,12 @@ fix: ''
 
 `language:` is spelled as the tables in this skill spell it (`CSS`, `YAML`, `C++`). A language with no exceptions drops the `not:` block. The rule files hold no comments of their own. They live in the repo, and an example comment there is the first thing the next agent copies.
 
+The HTML rule always has one exception. Inside `<textarea>`, `<title>`, and the other elements whose content HTML reads as text, `<!-- … -->` is text, not a comment, though the parser reports it as one; deleting it deletes page content. In SVG and MathML those names are ordinary elements, so a comment there stays banned:
+
+```yaml
+      - inside: { kind: element, stopBy: end, has: { kind: start_tag, has: { kind: tag_name, regex: '^(?i:textarea|title|xmp|iframe|noembed|noframes|noscript|plaintext)$' } }, not: { inside: { kind: element, stopBy: end, has: { kind: start_tag, has: { kind: tag_name, regex: '^(?i:svg|math)$' } } } } }
+```
+
 Position-bound exceptions go in the same `not: any:` list. They name the file's root node, which differs by language: `module` for Python; `program` for TypeScript, Tsx, JavaScript, Bash, and Ruby; `source_file` for Go and Rust. Another language → probe it the way section 1 probes comment kinds. The Python forms:
 
 ```yaml
@@ -220,7 +232,7 @@ Every rule gets a test file, built from this table and nothing else, so two runs
 
 In this order, skipping an empty cell:
 
-- `valid`: the string; then each exception, in section 2's table order, once per listed value, on the line before `<s>`. An exception that allows a run (the TypeScript references) also gets all its values in a row. Doc comments kept (Ask once) → the doc case goes here instead of in `invalid`.
+- `valid`: the string; then each exception, in section 2's table order, once per listed value, on the line before `<s>`. An exception that allows a run (the TypeScript references) also gets all its values in a row. Doc comments kept (Ask once) → the doc case goes here instead of in `invalid`. HTML also gets `<textarea><!-- x --></textarea>`, right after the string.
 - `invalid`: the line comment, then `<s>`; `<s>` and the line comment on one line; the block comment and `<s>` on one line; the doc comment, then `<s>`. Then, per exception: its slot holding `x-keep-this`; a position-bound one after `<s>`; each banned variant section 2 names for its tool (`# noqa`, `@ts-ignore`, `eslint-disable` without a rule).
 
 Write every case as a `|` block scalar. Unquoted, `: ` makes YAML read a case as a map and `#` starts a YAML comment. `ast-grep-ignore` stays out: section 4 bans it everywhere, test files included. The docstring rule's test is fixed:
@@ -267,13 +279,14 @@ This is the ledger: one object per match, with its file, position, and full text
 Add to the repo's existing lint command (package script, Makefile target, or whatever CI and the repo's CLAUDE.md or AGENTS.md tell agents to run), so the check runs wherever lint already runs:
 
 ```bash
-ast-grep test --skip-snapshot-tests && ast-grep scan --no-ignore hidden --globs '!.git' && ! git grep -n --untracked -G 'ast-grep[-]ignore'
+ast-grep test --skip-snapshot-tests && ast-grep scan --no-ignore hidden --globs '!.git' && ! { git grep -n --untracked -G 'ast-grep[-]ignore' 2>&1 || true; } | grep .
 ```
 
-The scan flags are the ones from section 1: without them, comments in `.github/` and other hidden directories pass. The last part fails lint when `ast-grep-ignore` appears anywhere in the repo, comment or string, any line, any directory. Anything narrower is a way around it. Three details keep it honest:
+The scan flags are the ones from section 1: without them, comments in `.github/` and other hidden directories pass. The last part fails lint when `ast-grep-ignore` appears anywhere in the repo, comment or string, any line, any directory. Anything narrower is a way around it. Four details keep it honest:
 
 - `--untracked`: plain `git grep` searches only tracked files, so a new file an agent hasn't staged yet would slip past. Files the repo's `.gitignore` excludes stay out, as they do for `ast-grep scan`.
 - `-G` makes the pattern a basic regex whatever the user's `grep.patternType` says; with `fixed`, `[-]` would be taken literally and match nothing.
+- `2>&1 || true; } | grep .` fails lint on any output, a match or git's own error, so a search that fails can't pass as one that found nothing. `|| true` keeps git's exit status out of the pipeline, so it holds with or without `pipefail`.
 - `[-]` matches the same text, but the command's own text doesn't contain `ast-grep-ignore`, so the Makefile or package.json holding it doesn't fail its own check.
 
 Paste it into the lint target as is. It has no `$`, double quotes, or backslashes, so it needs no escaping in a Makefile recipe or a package.json script.
@@ -317,7 +330,7 @@ Rule files are named by their id. Filtering on it keeps the fixes to the guard's
 python3 "${CLAUDE_SKILL_DIR}/scripts/tidy.py" --base <snap> <scratchpad>/cuts-*.jsonl
 ```
 
-It touches only the lines the recorded removals cut, the same way in every language: it drops a line a removal left blank, strips the whitespace a removal left at a line's end, and merges the blank lines around a dropped one. Everything else is kept byte for byte. A file that isn't the snapshot minus those removals is skipped and named; find what changed it before going on. Exit 3 names each line to fix by hand: one where a removal joined code on either side (`return/**/1` is now `return1`), since what the comment stood for depends on the language, and one a removal left ending in a backslash, which now continues onto the next line (`#define X \/* note */`). Run the repo's formatter after tidy.py, if the repo has one.
+It touches only the lines the recorded removals cut, the same way in every language: it drops a line a removal left blank, strips the whitespace a removal left at a line's end, and merges the blank lines around a dropped one. Everything else is kept byte for byte. A file that isn't the snapshot minus those removals is skipped and named; find what changed it before going on. Exit 3 names each line to fix by hand: one where a removal joined code on either side (`return/**/1` is now `return1`) or took a line break from between code (`return /*⏎*/ 1`, where the break ended the statement), since what the comment stood for depends on the language; and one a removal left ending in a backslash, which now continues onto the next line (`#define X \/* note */`). HTML comment cuts in a file with a `<pre>` are left as `-U` made them, since in `<pre>` whitespace is content. Run the repo's formatter after tidy.py, if the repo has one.
 
 `-U` doesn't touch docstrings, because `no-docstrings-python` has no `fix`: removing one can leave a function or class with an empty body, which is a syntax error. Remove each by hand, adding `...` only where the body would otherwise be empty.
 
@@ -358,7 +371,7 @@ ast-grep <version>, pinned via <how>
 
 ## Cleanup
 <n> comments removed across <m> files. tidy.py, then formatter: <command, or "none">.
-Ledger: <absolute path to removed-comments.jsonl>, <n> rows; plus comments-unguarded.jsonl, <n> rows, if any. Base: <base sha>.
+Ledger: <absolute path to removed-comments.jsonl>, <n> rows; plus comments-unguarded.jsonl, <n> rows, and suppressions.txt, <n> lines, if any. Base: <base sha>.
 
 ## Unguarded
 - <file type or embedded code> — <count> files, <count> comments — <removed by hand | left>

@@ -175,6 +175,15 @@ const a = 1;
 ref_case "flags an unlisted reference at the top" "0" '/// <reference types="other" />
 const a = 1;'
 
+echo "HTML text elements"
+html_text="$(awk '/^The HTML rule always has one exception/{f=1} f && /^```yaml/{g=1; next} g && /^```/{exit} g' "$SKILL")"
+[ -n "$html_text" ] || bad "HTML text-element exception found in SKILL.md" "nothing"
+printf 'id: t\nlanguage: Html\nrule:\n  kind: comment\n  not:\n    any:\n%s\n' "$html_text" > "$WORK/html.yml"
+printf '<title>a<!-- t -->b</title>\n<TextArea>x<!-- ta --></TextArea>\n<xmp><!-- x --></xmp>\n<noscript><!-- n --></noscript>\n<pre><!-- p --></pre>\n<div><p><!-- ok --></p></div>\n<svg><title><!-- svg -->Icon</title></svg>\n' > "$WORK/text.html"
+got="$(ast-grep scan -r "$WORK/html.yml" --json=stream "$WORK/text.html" 2>/dev/null | python3 -c 'import json, sys; print(" ".join(json.loads(l)["text"] for l in sys.stdin))')"
+[ "$got" = "<!-- p --> <!-- ok --> <!-- svg -->" ] && ok "<!-- --> in title, textarea, xmp, noscript is text, left alone; in pre, p, and an SVG title a comment" \
+  || bad "HTML text elements" "$got"
+
 echo "removal pairs and tidy, end to end"
 removal="$(awk '/One rule per pair/{f=1} f && /^```bash/{g=1; next} g && /^```/{exit} g' "$SKILL")"
 tidy_cmd="$(grep -m1 'scripts/tidy.py" --base' "$SKILL")"
@@ -279,8 +288,11 @@ while IFS= read -r row; do
     rm -rf "$tpl"; mkdir -p "$tpl/rules" "$tpl/rule-tests"
     printf 'ruleDirs: [rules]\ntestConfigs:\n  - testDir: rule-tests\n' > "$tpl/sgconfig.yml"
     { echo "id: t"; echo "language: $(sg_lang "$lang")"; echo "severity: error"; echo "rule:"; echo "  any:"
-      echo "$kinds" | sed 's/^/    - kind: /'; } > "$tpl/rules/t.yml"
-    { echo "id: t"; echo "valid:"; case_of "$str"; echo "invalid:"
+      echo "$kinds" | sed 's/^/    - kind: /'
+      [ "$lang" = HTML ] && printf '  not:\n    any:\n%s\n' "$html_text"; } > "$tpl/rules/t.yml"
+    { echo "id: t"; echo "valid:"; case_of "$str"
+      [ "$lang" = HTML ] && case_of '<textarea><!-- x --></textarea>'
+      echo "invalid:"
       [ -n "$line" ] && { case_of "$line" "$s"; case_of "$s $line"; }
       [ -n "$block" ] && case_of "$block $s"
       [ -n "$doc" ] && case_of "$doc" "$s"
@@ -389,6 +401,29 @@ got="$(cat "$WORK/fix/a.py")"
 [ "$got" = "$(printf '\nx = 1  \ns = "# no"')" ] && ok "leaves a blank line and trailing spaces, keeps strings" \
   || bad "comment text removed" "$(printf '%s' "$got" | od -c | head -3)"
 
+echo "suppression record"
+supp_cmd="$(awk '/^Find any `ast-grep-ignore` already in the repo/{f=1} f && /^```bash/{g=1; next} g && /^```/{exit} g' "$SKILL")"
+[ -n "$supp_cmd" ] || bad "suppression command found in SKILL.md" "nothing"
+sup="$WORK/sup"
+mkdir -p "$sup/vendor"
+git -C "$sup" init -q
+printf 'x = 1\n' > "$sup/a.py"
+git -C "$sup" add -A
+for shell in bash zsh; do
+  command -v "$shell" >/dev/null || continue
+  out="$(cd "$sup" && "$shell" -c "set -o pipefail; $(echo "$supp_cmd" | sed "s|<scratchpad>|$WORK|g")")"
+  [ "$out" = "exit 0" ] && [ ! -s "$WORK/suppressions.txt" ] && ok "$shell: no token, exit 0 and an empty record" \
+    || bad "$shell: no token" "$out"
+done
+printf '# ast-grep-ignore\n\n# hidden\n' > "$sup/vendor/a.py"
+git -C "$sup" add -A
+out="$(cd "$sup" && bash -c "$(echo "$supp_cmd" | sed "s|<scratchpad>|$WORK|g")")"
+[ "$out" = "exit 0" ] && [ "$(cat "$WORK/suppressions.txt")" = "vendor/a.py:1:# ast-grep-ignore" ] \
+  && ok "records the token's line in a path the rules ignore" || bad "records the token" "$out: $(cat "$WORK/suppressions.txt")"
+git -C "$sup" config grep.patternType not-a-type
+out="$(cd "$sup" && bash -c "$(echo "$supp_cmd" | sed "s|<scratchpad>|$WORK|g")" 2>/dev/null)"
+[ "$out" != "exit 0" ] && ok "a grep error isn't exit 0" || bad "grep error reported" "$out"
+
 echo "lint command"
 lint="$(awk '/^## 4\./{f=1} f && /^```bash/{g=1; next} g && /^```/{exit} g' "$SKILL")"
 [ -n "$lint" ] || bad "lint command found in SKILL.md section 4" "nothing"
@@ -487,7 +522,25 @@ lint_case "passes on a clean repo with grep.patternType=fixed" 0
 printf '# ast-grep-ignore\n\n# hidden\n' > "$repo/bypass.py"
 lint_case "fails on the token even with grep.patternType=fixed" nonzero
 rm "$repo/bypass.py"
+git -C "$repo" config grep.patternType not-a-type
+lint_case "fails when git grep itself fails" nonzero
 git -C "$repo" config --unset grep.patternType
+for shell in bash zsh; do
+  command -v "$shell" >/dev/null || continue
+  # pipefail_case <name> <want-exit: 0|nonzero> — the command run by <shell> under pipefail.
+  pipefail_case() {
+    local rc=0
+    (cd "$repo" && "$shell" -o pipefail -c "$lint" >/dev/null 2>&1) || rc=$?
+    if { [ "$2" = 0 ] && [ "$rc" = 0 ]; } || { [ "$2" = nonzero ] && [ "$rc" != 0 ]; }; then ok "$shell, pipefail: $1"; else bad "$shell, pipefail: $1" "exit $rc"; fi
+  }
+  pipefail_case "passes on a clean repo" 0
+  printf '# ast-grep-ignore\n' > "$repo/bypass.py"
+  pipefail_case "fails on the token" nonzero
+  rm "$repo/bypass.py"
+  git -C "$repo" config grep.patternType not-a-type
+  pipefail_case "fails when git grep itself fails" nonzero
+  git -C "$repo" config --unset grep.patternType
+done
 
 lint_case "passes again once the bypass is gone" 0
 
