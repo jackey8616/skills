@@ -44,7 +44,7 @@ Files ast-grep has no grammar for (TOML, Makefile, Dockerfile, …) can't be gua
 Code embedded in another language is a separate case:
 
 - `<script>` and `<style>` in HTML are guarded. In `.html` files the JavaScript rule reaches `<script>`, the TypeScript rule reaches `<script lang="ts">`, and the CSS rule reaches `<style>`; `-U` cleans them. Write those rules for a repo with HTML even if it has no `.js`, `.ts`, or `.css` files.
-- Code inside a string is invisible: a YAML `run: |` block is a YAML string, so the shell comments in it are never seen. The same goes for SQL in string literals. Find them by hand (`git grep -n` for `run: |` and the like) and count them for Ask once. If the user chooses to remove them, extract every one into `<scratchpad>/comments-embedded.jsonl` right after Ask once: one object per comment with its file, line, and full text. That's before section 4 edits any of those files, so the record doesn't depend on line numbers that will shift. Section 5 reads this file with the others, and removes each comment by its text.
+- Code inside a string is invisible: a YAML `run: |` block is a YAML string, so the shell comments in it are never seen. The same goes for SQL in string literals. Find them by hand (`git grep -n` for `run: |` and the like) and count them for Ask once. If the user chooses to remove them, extract every one into `<scratchpad>/comments-embedded.jsonl` right after Ask once: one object per comment with its file, line, and full text. That's before section 4 edits any of those files. Section 5 removes each by its text, not its line.
 
 Unparseable files and invisible embedded code both go in the reply under Unguarded. Whether their existing comments go is the user's call (Ask once). Run section 2's directive check over them too: unguarded files hold tool directives like any other (`--> statement-breakpoint` in a Drizzle migration, `-- +goose Up`, `# syntax=docker/dockerfile:1`), and removing one breaks the tool. Migrations are better left alone entirely.
 
@@ -92,7 +92,7 @@ Every `<slot>` above is a place prose could hide: `#!/usr/bin/env do-not-touch-t
 
 ### Ask once
 
-Batch these into one AskUserQuestion call, after the inventory and before writing rules. It takes four questions at most, and there are four here. Skip a question the inventory already answers: no unguarded comments, no unknown directives. Python docstrings and doc comments are one question, not two. Still more than four → don't ask about pinning; pin an exact version in CI only, at the version the inventory used, and say so in the reply. The only other question is the facts one at the end of section 5.
+Batch these into one AskUserQuestion call, after the inventory and before writing rules. It takes four questions at most, and there are four here. Skip a question the inventory already answers: no unguarded comments, no unknown directives. Python docstrings and doc comments are one question, not two. Still more than four → don't ask about pinning; pin an exact version in CI only, at the version the inventory used, and say so in the reply.
 
 - **Docstrings and doc comments.** Python docstrings are strings, not comments, so `kind: comment` misses them. JSDoc, rustdoc `///`, and Go doc comments are comments, and the rule removes them. Ban both by default. The cost: editors lose the hover text on those functions. Keep them only if the repo builds API docs from them (Sphinx, mkdocstrings, pdoc, TypeDoc, rustdoc config present) or the user wants the hover text; then add an exception for the doc-comment form, limited to the paths the user names.
 - **Unguarded comments.** Show the count by file type from section 1: unparseable files, and code embedded in strings. Ask whether to remove them once by hand or leave them. Nothing will keep them out later either way. Config files often hold the repo's most useful comments; say so if that's what you found.
@@ -200,11 +200,56 @@ This matches what Python itself takes as a docstring: a plain string statement, 
 
 `severity: error` makes `ast-grep scan` exit 1 on a match, so it can gate lint and CI. The `message` and `note` are what the next agent reads when it writes a comment, so they say what to do instead.
 
-Every rule gets a test file. `valid` holds each allowed exception and a string containing comment characters (`"// x"`, `"# x"`). `invalid` holds a line comment, a trailing comment, a block comment, a doc comment, and each banned variant of each exception (`# noqa`, `@ts-ignore`, `eslint-disable` without a rule). Leave `ast-grep-ignore` out of the fixtures too: section 4 bans it everywhere, test files included. Write any case that spans lines or contains `: `, `{`, or `#` as a `|` block scalar. Unquoted, `: ` makes YAML read the case as a map and `#` starts a YAML comment, and the whole test file fails to parse; inside single quotes, `\n` stays a literal backslash and n. HTML is the exception to the comment-characters case: its grammar parses `<!--` inside an attribute value as a comment, so leave that case out of an HTML rule's `valid`.
+Every rule gets a test file, built from this table and nothing else, so two runs on the same repo write the same file. `<s>` is the statement column.
+
+| Language | `<s>` | String | Line | Block | Doc |
+| -------- | ----- | ------ | ---- | ----- | --- |
+| TypeScript, Tsx, JavaScript | `const a = 1;` | `const s = "// x /* y */";` | `// line` | `/* block */` | `/** doc */` |
+| Go | `var a = 1` | `var s = "// x /* y */"` | `// line` | `/* block */` | |
+| C, C++ | `int a = 1;` | `const char *s = "// x /* y */";` | `// line` | `/* block */` | |
+| Java | `class A {}` | `class A { String s = "// x /* y */"; }` | `// line` | `/* block */` | `/** doc */` |
+| Kotlin | `val a = 1` | `val s = "// x /* y */"` | `// line` | `/* block */` | `/** doc */` |
+| Rust | `const A: i32 = 1;` | `const S: &str = "// x /* y */";` | `// line` | `/* block */` | `/// doc` |
+| Python, Ruby | `a = 1` | `s = "# x"` | `# line` | | |
+| Bash | `echo a` | `echo "# x"` | `# line` | | |
+| YAML | `a: 1` | `a: "# x"` | `# line` | | |
+| CSS | `a { color: red; }` | `a { content: "/* x */"; }` | | `/* block */` | |
+| HTML | `<p>a</p>` | `<p>a -- b</p>` | | `<!-- block -->` | |
+
+In this order, skipping an empty cell:
+
+- `valid`: the string; then each exception, in section 2's table order, once per listed value, on the line before `<s>`. An exception that allows a run (the TypeScript references) also gets all its values in a row.
+- `invalid`: the line comment, then `<s>`; `<s>` and the line comment on one line; the block comment and `<s>` on one line; the doc comment, then `<s>`. Then, per exception: its slot holding `x-keep-this`; a position-bound one after `<s>`; each banned variant section 2 names for its tool (`# noqa`, `@ts-ignore`, `eslint-disable` without a rule).
+
+Write every case as a `|` block scalar. Unquoted, `: ` makes YAML read a case as a map and `#` starts a YAML comment. `ast-grep-ignore` stays out: section 4 bans it everywhere, test files included. The docstring rule's test is fixed:
+
+```yaml
+id: no-docstrings-python
+valid:
+  - |
+    s = "x"
+  - |
+    f"{s}"
+invalid:
+  - |
+    """doc"""
+  - |
+    def f():
+        """doc"""
+        return 1
+```
 
 ```bash
 ast-grep test --skip-snapshot-tests
 ```
+
+Then record every comment the cleanup will remove, before section 4 touches any file, so the line numbers are `HEAD`'s:
+
+```bash
+ast-grep scan --no-ignore hidden --globs '!.git' --json=stream > <scratchpad>/removed-comments.jsonl
+```
+
+This is the ledger: one object per match, file, position, and full text. With `comments-embedded.jsonl` (section 1), it's what section 8 works from.
 
 ## 4. Wire it in
 
@@ -225,55 +270,9 @@ No lint command in the repo → create one where the repo keeps its commands (a 
 
 ## 5. Remove the existing comments
 
-### Read them first
+The ledger from section 3 holds every comment this removes, so nothing is read or sorted here. What the comments knew is section 8's business, after the reply.
 
-Before anything is deleted, read every comment the cleanup will remove: the section 1 dumps, plus the unguarded ones only if the user chose to remove them. Comments that stay aren't sorted. Read each in context from `git show HEAD:<path>`, not the working tree: section 4 has already edited some files (the CI workflow), and the line numbers in the dumps are `HEAD`'s. A comment that holds a fact the code doesn't — a non-obvious unit, an external constraint, a known bug — is a finding. List it with a suggested home: a name, a type, a test, a doc, or an issue. Don't keep it as a comment.
-
-Comments go stale; that's why they're being removed. So check each fact against the code as it is now before it goes anywhere. Still true → keep it. No longer true → drop it, and list it in the reply as stale.
-
-Sort each fact by where it belongs:
-
-- **Prose**: why the code is this way, an external constraint, domain context. → Docs. Only what a reader can't get from the code and what will stay true; the rest is noise in the docs.
-- **Code**: a name, a constant, a type, or a test would say it. → An issue, or a follow-up change. Not part of this cleanup.
-- **Already said**: a test or a name says it now. → Drop it.
-
-Docs that the code contradicts turn up while doing this — a README count that's wrong, a vendor note about behaviour that changed. They aren't comments, so they fit none of the three; list them as stale docs.
-
-Hundreds of comments → split the JSONL dumps into chunks and hand each to a subagent. About 130 comments a chunk works: five subagents for 700. Keep each file's comments in one chunk, so the subagent sees them together and can merge related ones; balance chunks by text size. Its brief is this subsection, plus section 2's rule with this repo's answer: a comment is a directive only if its tool is configured here, and the configured tools are <list>. Without that, a subagent will call an `eslint-disable` essential in a repo that doesn't run ESLint.
-
-Each subagent returns exactly one row per input comment, no more, no fewer:
-
-| Field | Content |
-| ----- | ------- |
-| `path:line` | as in the dump |
-| comment | the full original text, verbatim |
-| category | `prose`, `code`, `already-said`, `stale` (no longer true), or `restates` (says only what the line below says) |
-| fact | what the comment says, and nothing it doesn't |
-| inference | anything the subagent adds from the code, kept apart from the fact; empty is fine |
-| home | the doc, or the name, constant, type, test, or issue |
-
-Plus one extra row per doc the code contradicts, category `stale-doc`, keyed by the doc's `path:line`. Summaries drift: a subagent told "stateless, fine for Workers" will write "so every DB round-trip is a subrequest" unless the fact column has to stand next to the original.
-
-Merging:
-
-1. Check coverage: every comment in the dumps appears in exactly one row. A missing or doubled one goes back to its subagent.
-2. Deduplicate across chunks. Chunks split by file, but a fact often isn't: the same rule in five locale files, a limit noted in two modules, one stale doc reported by four subagents. One row per fact, listing every source `path:line`.
-
-Thousands of comments → before the subagents, make one quick pass that drops comments that only restate the line below them (`// increment i`), and hand the rest on.
-
-Now ask the user where the facts go, as its own question, per category: prose facts into the docs in this change, or listed only; code facts filed as issues, or listed only; stale docs fixed in this change, or listed only. Already-said facts are dropped without asking. Asking here, before anything is removed, means the cleanup's diff and the reply describe the final state.
-
-Writing prose facts into docs:
-
-- Every sentence traces to a removed comment or to code. Keep the source next to it while writing.
-- Add nothing the source doesn't say. "Old URLs redirect to new ones" stays that; "via a Cloudflare rule" is a guess unless the repo says so.
-- A fact you can't check against the code stays out of the docs. List it in the reply under To confirm, with its source; the user decides. Never publish a "to confirm" marker in the docs themselves.
-
-The same rules bind a subagent that writes them; put them in its brief.
-
-### Remove them
-
-First take a snapshot of the working tree as it is now. `git stash create` records it as a commit without touching the tree, the index, or the stash list; it prints nothing when the tree is clean, and then `HEAD` is the snapshot. Section 4's edits are already in it, so nothing below mistakes them for comment removal.
+First take a snapshot of the working tree. `git stash create` records it as a commit without touching the tree, the index, or the stash list; it prints nothing when the tree is clean, and then `HEAD` is the snapshot. Section 4's edits are in it, so nothing below mistakes them for comment removal. New untracked files, like the rule files, aren't; they hold no comments.
 
 ```bash
 snap="$(git stash create)"; snap="${snap:-HEAD}"; echo "$snap"
@@ -291,15 +290,13 @@ It exits 1 while matches without a fix remain, such as docstrings; that's expect
 git diff --name-only -z <snap> | xargs -0 -r ast-grep scan --inline-rules '{id: empty-jsx, language: <Tsx|JavaScript>, rule: {kind: jsx_expression, regex: "^\\{\\s*\\}$"}, fix: ""}' -U
 ```
 
-The rule matches only a JSX expression container with nothing in it, never an object literal or a block, so `const o = {/* x */}` keeps its `{}`. In a changed file, an empty container that was already there goes too; it rendered nothing. Limiting it to changed files is what keeps it out of the paths in `ignores`: an inline rule has no `ignores` of its own, and a fixture the comment rules skipped hasn't changed. Then:
+It matches only a JSX expression container with nothing in it, so `const o = {/* x */}` keeps its `{}`. An inline rule has no `ignores`, so the changed-files list is what keeps it out of fixtures. Then:
 
 ```bash
 python3 "${CLAUDE_SKILL_DIR}/scripts/tidy.py" --base <snap>
 ```
 
-It compares each file changed since the snapshot and touches only where text was removed: whitespace left between a removal and the end of its line, lines left blank, a blank run a dropped line merged (capped at the longer of the runs it joined), and blank lines left at the top of a file. Everything else is kept byte for byte, line endings included, so trailing spaces that are string data stay. Run the repo's formatter after it, if the repo has one.
-
-Write prose facts into the docs only after this, so tidy never sees those edits.
+It touches only where text was removed since the snapshot: the whitespace and blank lines the removal left. Everything else is kept byte for byte. Run the repo's formatter after it, if the repo has one.
 
 `-U` doesn't touch docstrings, because `no-docstrings-python` has no `fix`: removing one can leave a function or class with an empty body, which is a syntax error. Remove each by hand, adding `...` only where the body would otherwise be empty.
 
@@ -323,10 +320,8 @@ The skill's own version: the installer records the commit it installed on the fi
 
 Don't commit. Leave everything in the working tree, and recommend two commits: the cleanup (section 5) first, then the guard (sections 3–4). In that order every commit passes lint; the guard alone would fail on the comments still there. Two things to tell the user with it:
 
-- A file changed by both needs its hunks split: a CI workflow that lost comments and gained the lint step, and a README that gained the lint command (section 4) and the prose facts (section 5). Interactively, `git add -p`. Without a terminal: take the guard's lines out of the file, stage it with the cleanup and commit, put the lines back, then stage and commit the guard.
+- A file changed by both, usually the CI workflow (comments gone, lint step added), needs its hunks split. Interactively, `git add -p`. Without a terminal: take the guard's lines out of the file, stage it with the cleanup and commit, put the lines back, then stage and commit the guard.
 - The cleanup commit belongs in `.git-blame-ignore-revs` only if it survives merging. A squash merge folds both commits into one, and ignoring that hides the guard too. Squash-only repo → merge this one with a rebase or merge commit, or skip `.git-blame-ignore-revs`.
-
-Report where each fact went, per the user's answer in section 5. More than about 30 facts → the reply gives the count per category and the most important few; write the full table to a file in your scratchpad and give its path.
 
 ```
 ## Annotation guard — <repo>
@@ -342,32 +337,44 @@ ast-grep <version>, pinned via <how>
 
 ## Cleanup
 <n> comments removed across <m> files. Formatter: <command, or "none">; then tidy.py.
+Ledger: <absolute path to removed-comments.jsonl>, <n> rows; plus comments-embedded.jsonl, <n> rows, if any.
 
 ## Unguarded
 - <file type or embedded code> — <count> files, <count> comments — <removed by hand | left>
 
-## Verification
-| Check | Before | After |
-| ----- | ------ | ----- |
-
-## Facts
-<n> prose → <docs | listed>, <n> code → <issues | listed>, <n> already said, dropped.
-
-| Category | `path:line` | Removed comment | Home |
-| -------- | ----------- | --------------- | ---- |
-| prose / code | | | <doc, or name, constant, type, test, issue> |
-
-Over ~30: the most important few here, the full table at <scratchpad path>.
-
-## To confirm
-- `path:line` — <fact as the comment states it> — <why the code couldn't confirm it>
-
 ## Directives removed, tool not configured
 - <directive> — <count> — <tool missing>
 
-## Stale docs
-- <doc file:line> — <what it says> — <what the code does> — <fixed | listed>
-
-## Stale facts dropped
-- `path:line` — <removed comment> — <what the code does now>
+## Verification
+| Check | Before | After |
+| ----- | ------ | ----- |
 ```
+
+End by offering to go through what the removed comments knew (section 8). The ledger is in your scratchpad, which goes with this session; say so, so the user can copy it out if they'll pick it up elsewhere.
+
+## 8. After the reply: what the comments knew
+
+The setup is done; this part is a conversation. Some removed comments held facts the code doesn't: an external constraint, a unit, a known bug. Where those go is the user's call, so don't decide it, and don't start until the user says to. What this section fixes is how the ledger is sorted and in what order it's put to the user.
+
+Read each row in context from `git show HEAD:<path>`: the ledger's lines are `HEAD`'s, and the comments are gone from the working tree. Check what it says against the code as it is now, then sort it into one category:
+
+| Category | What it is |
+| -------- | ---------- |
+| `stale-doc` | Not a row: a doc the code contradicts or doesn't follow, found while reading. Keyed by the doc's `path:line`, once however many rows point at it. |
+| `prose` | Why the code is this way, or domain context, that a reader can't get from the code. |
+| `external` | A fact about something outside the repo (a platform, a vendor, a plan limit) that the code is consistent with but can't prove. |
+| `code` | A name, a constant, a type, or a test would say it. |
+| `already-said` | The code or a test says it now. |
+| `restates` | Says only what the line below says. |
+| `stale` | No longer true. |
+
+Put them to the user in this order, one group at a time: stale docs; prose, grouped by the doc it would go in; external; code. `already-said`, `restates`, and `stale` are only a count, unless the user asks for them. Keep each fact next to its verbatim comment, so a summary can't drift from it.
+
+Hundreds of rows → offer to split them by file across subagents. Each returns one row per comment, with its verbatim text; check that every ledger row came back exactly once.
+
+When the user has a doc written:
+
+- Every sentence traces to a removed comment or to code.
+- Add nothing the source doesn't say. "Old URLs redirect to new ones" stays that; "via a Cloudflare rule" is a guess unless the repo says so.
+- An `external` fact goes in only as the user confirms it. No "to confirm" markers in the docs.
+- It's a third commit, after the two above.

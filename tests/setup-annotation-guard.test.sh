@@ -226,6 +226,70 @@ got="$(ast-grep scan -r "$WORK/doc.yml" --json=stream "$WORK/doc.py" 2>/dev/null
 [ "$got" = "0 2 6 9 11 13" ] && ok "matches plain, concatenated, and parenthesized docstrings; not f-strings or code" \
   || bad "docstrings only" "$got"
 
+echo "rule test template"
+# kinds_of <lang> — the comment kinds the kinds table gives a language.
+kinds_of() {
+  echo "$table" | awk -F'|' -v lang="$1" '{
+    n = split($2, names, ",")
+    for (i = 1; i <= n; i++) { gsub(/^ +| +$/, "", names[i]); if (names[i] == lang) { print $3; exit } }
+  }' | grep -oE '`[a-z_]+`' | tr -d '`' | awk '!seen[$0]++'
+}
+# case_of <line>... — one YAML block scalar case.
+case_of() { printf '  - |\n'; printf '    %s\n' "$@"; }
+cell() { echo "$1" | sed -E 's/^ *`?//; s/`? *$//'; }
+fixtures="$(awk '/^\| Language \| `<s>` \|/{f=1; next} f && /^\|/{print; next} f{exit}' "$SKILL" | tail -n +2)"
+[ -n "$fixtures" ] || bad "fixture table found in SKILL.md" "nothing"
+tpl="$WORK/tpl"
+while IFS= read -r row; do
+  IFS='|' read -r _ langs s str line block doc _ <<< "$row"
+  s="$(cell "$s")"; str="$(cell "$str")"; line="$(cell "$line")"; block="$(cell "$block")"; doc="$(cell "$doc")"
+  IFS=',' read -ra list <<< "$langs"
+  for lang in "${list[@]}"; do
+    lang="$(echo "$lang" | xargs)"
+    kinds="$(kinds_of "$lang")"
+    if [ -z "$kinds" ]; then bad "$lang is in the kinds table" "missing"; continue; fi
+    rm -rf "$tpl"; mkdir -p "$tpl/rules" "$tpl/rule-tests"
+    printf 'ruleDirs: [rules]\ntestConfigs:\n  - testDir: rule-tests\n' > "$tpl/sgconfig.yml"
+    { echo "id: t"; echo "language: $(sg_lang "$lang")"; echo "severity: error"; echo "rule:"; echo "  any:"
+      echo "$kinds" | sed 's/^/    - kind: /'; } > "$tpl/rules/t.yml"
+    { echo "id: t"; echo "valid:"; case_of "$str"; echo "invalid:"
+      [ -n "$line" ] && { case_of "$line" "$s"; case_of "$s $line"; }
+      [ -n "$block" ] && case_of "$block $s"
+      [ -n "$doc" ] && case_of "$doc" "$s"
+    } > "$tpl/rule-tests/t-test.yml"
+    n="$(grep -c '^  - |' "$tpl/rule-tests/t-test.yml")"
+    out="$(cd "$tpl" && ast-grep test --skip-snapshot-tests 2>&1)"
+    if echo "$out" | grep -q '1 passed; 0 failed' && [ "$n" -ge 2 ]; then
+      ok "$lang: string valid, every comment form invalid ($n cases)"
+    else
+      bad "$lang template" "$(echo "$out" | tail -3)"
+    fi
+  done
+done <<< "$fixtures"
+
+doc_test="$(awk '/^id: no-docstrings-python$/{f=1} f && /^```/{exit} f' "$SKILL")"
+rm -rf "$tpl"; mkdir -p "$tpl/rules" "$tpl/rule-tests"
+printf 'ruleDirs: [rules]\ntestConfigs:\n  - testDir: rule-tests\n' > "$tpl/sgconfig.yml"
+cp "$WORK/doc.yml" "$tpl/rules/doc.yml"
+printf '%s\n' "$doc_test" > "$tpl/rule-tests/doc-test.yml"
+out="$(cd "$tpl" && ast-grep test --skip-snapshot-tests 2>&1)"
+[ -n "$doc_test" ] && echo "$out" | grep -q '1 passed; 0 failed' && ok "docstring rule passes its fixed test" \
+  || bad "docstring rule test" "$(echo "$out" | tail -3)"
+
+echo "ledger"
+ledger_cmd="$(grep -m1 'removed-comments.jsonl$' "$SKILL" | sed "s|<scratchpad>|$WORK|")"
+mkdir -p "$WORK/led/rules"
+printf 'ruleDirs: [rules]\n' > "$WORK/led/sgconfig.yml"
+printf 'id: c\nlanguage: Python\nseverity: error\nrule:\n  kind: comment\n  not: { regex: "^# noqa: E501$" }\nfix: ""\n' > "$WORK/led/rules/c.yml"
+mkdir -p "$WORK/led/.github"
+printf '# a\nx = 1  # noqa: E501\n' > "$WORK/led/a.py"
+printf 'y = 2  # b\n' > "$WORK/led/.github/b.py"
+(cd "$WORK/led" && eval "$ledger_cmd") >/dev/null 2>&1
+got="$(wc -l < "$WORK/removed-comments.jsonl" 2>/dev/null | tr -d ' ')"
+[ -n "$ledger_cmd" ] && [ "$got" = 2 ] && grep -q '"text":"# b"' "$WORK/removed-comments.jsonl" \
+  && ok "records every comment the rules match, hidden directories included, exceptions left out" \
+  || bad "ledger rows" "${got:-none}"
+
 echo "fix: '' removes comment text only"
 mkdir -p "$WORK/fix"
 cat > "$WORK/fix/rule.yml" <<'EOF'
