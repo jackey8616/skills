@@ -4,5 +4,6 @@ focus: trace
 weight: 1
 ---
 
-The reply ends with a rewritten prompt that asks for the same function,
-specified more precisely.
+After the four answers comes a rewritten prompt that asks for the same
+function, specified more precisely. Anything after the rewrite is only a
+suggestion, set apart from it.

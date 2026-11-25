@@ -116,7 +116,7 @@ A gap the user must decide goes to them as a question, with your recommendation 
 
 ## 7. Improve
 
-Only what the user decided. Change the skill so it explains why, and generalise: the cases are a handful of examples of a skill that runs thousands of times, so a wording that fits the fixtures and nothing else makes it worse. In the same change, update cases whose expected outcome the decision moved, tighten the weak assertions, and run `evals.test.sh`. Leave the commits to the user's word.
+Only what the user decided. Change the skill so it explains why, and generalise: the cases are a handful of examples of a skill that runs thousands of times, so a wording that fits the fixtures and nothing else makes it worse. In the same change, update cases whose expected outcome the decision moved, tighten the weak assertions, and run `evals.test.sh`. Read every assertion against the changed skill, not just the ones the decision names: one written for the old wording can fail a run that follows the new one. In deepen's audit, "the reply ends with the rewrite" outlived a change that put suggestions after it. Leave the commits to the user's word.
 
 Then run the next iteration with `--old` (section 4). Read the result against the change:
 

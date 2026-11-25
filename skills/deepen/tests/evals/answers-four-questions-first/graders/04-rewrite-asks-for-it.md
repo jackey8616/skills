@@ -4,5 +4,5 @@ focus: trace
 weight: 1
 ---
 
-The reply ends with a rewritten prompt that asks for what the four answers
-named.
+After the four answers comes a rewritten prompt that asks for what they
+named. Anything after the rewrite is only a suggestion, set apart from it.
