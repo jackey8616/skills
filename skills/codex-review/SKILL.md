@@ -96,6 +96,8 @@ Look for the name in `herdr agent list`.
     -- -s workspace-write -c sandbox_workspace_write.network_access=true -a never
   ```
 
+  `agent start` returning `agent_pane_busy` means the new tab's shell hasn't finished starting. Run the same `agent start` again, up to five times.
+
   A first run in a folder often stops at Codex's own prompts — trust this folder, review hooks — so `agent start` can return `agent_not_ready`, or report the agent `blocked`. Check `herdr agent get` before the first prompt; `blocked` → relay it.
 
 - A reused reviewer keeps whatever permissions it was started with. Started by an older version of this skill, it may still stop for approvals — relay them, and suggest the user close the tab so the next run starts a fresh one.
@@ -124,10 +126,12 @@ With approvals off, what's left is mostly Codex's one-time startup prompts. What
 ### Send a round
 
 ```bash
-herdr agent prompt <reviewer> "$(cat <tmp>/codex-review-prompt-<n>.md)" --wait --timeout 540000
+herdr agent prompt <reviewer> "$(cat <tmp>/codex-review-prompt-<n>.md)"
+herdr agent wait <reviewer> --until working --timeout 10000
+herdr agent wait <reviewer> --timeout 540000
 ```
 
-The `$(cat …)` output isn't expanded again, so the `$` survives.
+The `$(cat …)` output isn't expanded again, so the `$` survives. Wait for `working` first: a reviewer just started, or done with the last round, already reads `done`, so a bare wait, or `agent prompt --wait`, returns before Codex has begun. Ignore a timeout on the first wait.
 
 - Returns `agent_blocked` before sending → relay, then send again.
 - Settles `blocked` → relay, until it settles `idle` or `done`.
