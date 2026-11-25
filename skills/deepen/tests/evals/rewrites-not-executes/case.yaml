@@ -1,0 +1,7 @@
+schema_version: "1.1"
+name: rewrites-not-executes
+expected_outcome: |
+  The prompt is directly doable, but the skill rewrites it instead of doing
+  it: no function, no files, no code run. The rewritten prompt is still for
+  that one function, deeper about what a duplicate is and how to check the
+  result, and adds no unrelated features.

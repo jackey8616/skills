@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Offline checks for the behaviour evals in tests/evals/. The evals themselves
 # are billed model runs (see CLAUDE.md); this runs no model. It checks that
-# every case is in the shape `claude plugin eval` loads, and that each
+# every case is in the shape `claude plugin eval` loads (skills-audit's
+# check-evals.py), and that each
 # fixture is what its case says it is: which tests pass and which fail, on
 # the base revision and on the change. A fixture that drifted from its case
 # would make the model's score meaningless.
@@ -11,7 +12,6 @@ set -uo pipefail
 
 TESTS="$(cd "$(dirname "$0")" && pwd)"
 EVALS="$TESTS/evals"
-SKILL="$(basename "$(dirname "$TESTS")")"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
@@ -23,63 +23,7 @@ bad()  { fail=$((fail + 1)); echo "  FAIL $1 — got: $2"; }
 echo "format"
 while IFS='|' read -r verdict name why; do
   if [ "$verdict" = ok ]; then ok "$name"; else bad "$name" "$why"; fi
-done < <(python3 - "$EVALS" "$SKILL" <<'EOF'
-import re, sys
-from pathlib import Path
-import yaml
-
-evals, skill = Path(sys.argv[1]), sys.argv[2]
-SETTINGS = {"tags", "max_turns", "timeout_seconds", "allowed_tools"}
-RESERVED = {"results", "mocks", "node_modules", "files", "true", "false", "null"}
-
-def front(path):
-    text = path.read_text()
-    m = re.match(r"---\n(.*?)\n---\n(.*)", text, re.S)
-    return (yaml.safe_load(m.group(1)), m.group(2).strip()) if m else (None, text)
-
-def report(name, problems):
-    print(f"ok|{name}" if not problems else f"bad|{name}|{'; '.join(problems)}")
-
-cases = sorted(p for p in evals.iterdir() if p.is_dir() and p.name != "results")
-report("at least one case", [] if cases else ["no case folders"])
-for case in cases:
-    n, problems = case.name, []
-    if not re.fullmatch(r"[a-z][a-z0-9-]*", n) or n in RESERVED:
-        problems.append("bad case name")
-
-    settings, prompt = front(case / "prompt.md") if (case / "prompt.md").is_file() else (None, "")
-    if not isinstance(settings, dict):
-        problems.append("prompt.md has no settings block")
-    elif set(settings) - SETTINGS:
-        problems.append(f"unknown settings {sorted(set(settings) - SETTINGS)}")
-    if not prompt.startswith(f"/{skill} "):
-        problems.append(f"prompt doesn't invoke /{skill} with arguments")
-
-    c = yaml.safe_load((case / "case.yaml").read_text()) if (case / "case.yaml").is_file() else {}
-    if c.get("schema_version") != "1.1":
-        problems.append("schema_version isn't the string \"1.1\"")
-    if c.get("name") != n:
-        problems.append(f"case.yaml name is {c.get('name')!r}")
-    if not (isinstance(c.get("expected_outcome"), str) and c["expected_outcome"].strip()):
-        problems.append("no expected_outcome")
-    script = (c.get("context") or {}).get("scaffold_script")
-    if not (script and (case / script).is_file()):
-        problems.append("no scaffold_script beside case.yaml")
-
-    graders = sorted((case / "graders").glob("*.md"))
-    if not graders:
-        problems.append("no graders")
-    for g in graders:
-        meta, body = front(g)
-        if not re.fullmatch(r"\d\d-[a-z0-9-]+\.md", g.name):
-            problems.append(f"{g.name}: not NN-few-words.md")
-        if not (isinstance(meta, dict) and meta.get("type") == "llm" and meta.get("focus") == "trace" and meta.get("weight") == 1):
-            problems.append(f"{g.name}: header isn't type llm, focus trace, weight 1")
-        if not body or "TODO" in body:
-            problems.append(f"{g.name}: no statement")
-    report(f"{n}: loads", problems)
-EOF
-)
+done < <(python3 "$TESTS/../../skills-audit/scripts/check-evals.py" "$(dirname "$TESTS")")
 
 # build <case> — scaffold the case into $WORK/<case>, as the eval run would,
 # and extract its base revision into $WORK/<case>-base. Prints the repo path.

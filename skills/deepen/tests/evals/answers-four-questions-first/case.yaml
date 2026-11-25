@@ -1,0 +1,7 @@
+schema_version: "1.1"
+name: answers-four-questions-first
+expected_outcome: |
+  Before rewriting, the reply answers the skill's four questions in order,
+  each specific to explaining an API latency increase. Then it rewrites the
+  prompt to ask for exactly that: still one blog post about last month's
+  latency, deeper, not bigger, and not written by the reply itself.

@@ -40,3 +40,4 @@ User-invoked — type the name to run it.
 | [`codex-review`](skills/codex-review/SKILL.md) | Claude implements, Codex reviews with `test-first-code-review`, Claude fixes; up to ten rounds. Uses a Herdr reviewer tab when available. |
 | [`deepen`](skills/deepen/SKILL.md) | Rewrite a prompt into a deeper version of the task, not a bigger one. |
 | [`setup-annotation-guard`](skills/setup-annotation-guard/SKILL.md) | Ban code comments in a repo with an ast-grep rule that allows only tool directives, wire it into lint and CI, and remove the comments already there. |
+| [`skills-audit`](skills/skills-audit/SKILL.md) | Run a skill's behaviour evals in fresh agents, grade them, and improve the skill with you round by round, or benchmark it across models. Uses skill-creator's grader and viewer. |
