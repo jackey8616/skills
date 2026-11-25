@@ -8,4 +8,6 @@ disable-model-invocation: true
 
 I want a deeper version of this task, not a bigger one. Before rewriting it: (1) say what a top professional in this field would do here that I'm not asking for; (2) name the rawest material they would start from instead of what has already been digested for me; (3) name the specific methods and tools they would use; (4) say what, other than you or me, would show the result is right. Then rewrite my prompt to ask for exactly that.
 
+Deeper, not bigger, means the rewritten prompt asks for the same deliverable mine does: one post stays one post, one function stays one function. Everything you add (investigation, tests, data, checks) must be there to show that deliverable is right, and the rewrite must say so, so I can tell what I'm getting from what backs it. Don't add a second deliverable: a fix, a tool, a dashboard, a series. If one seems worth doing, say so after the rewrite, outside it.
+
 My prompt: $ARGUMENTS
