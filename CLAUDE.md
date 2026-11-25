@@ -5,6 +5,7 @@ Tests are offline. Run the one for whatever you changed, and `python3 lint-skill
 - `bash install.test.sh` — `install.sh`
 - `bash lint-skills.test.sh` — `lint-skills.py`. Needs PyYAML (`pip install pyyaml`); only for working on this repo, since `install.sh` doesn't install it. It checks frontmatter, `agents/openai.yaml`, invocation set the same way in both, a README row per skill, the paths SKILL.md points at, and that every test sits where Layout says and is listed here. Its docstring lists each check. Description phrasing is checked only for the words "use when".
 - `bash skills/codex-review/tests/detect.test.sh` — `skills/codex-review/scripts/detect.sh`
+- `bash skills/skills-audit/tests/scripts.test.sh` — `skills/skills-audit/scripts/prepare.py`, `collect.py`, and `find-skill-creator.sh`
 - `bash skills/test-first-code-review/tests/evals.test.sh` — the cases in `skills/test-first-code-review/tests/evals/`: that each loads, and that its fixture's tests pass and fail where the case says
 - `bash skills/setup-annotation-guard/tests/tidy.test.sh` — `skills/setup-annotation-guard/scripts/tidy.py`
 - `bash skills/setup-annotation-guard/tests/setup-annotation-guard.test.sh` — the ast-grep claims in `skills/setup-annotation-guard/SKILL.md`, and its `ledger.sh`, `remove.sh`, and `checks.sh`. Needs ast-grep on PATH or `AST_GREP=<path>`.
@@ -18,6 +19,8 @@ A skill's behaviour evals go in `skills/<name>/tests/evals/`, one folder per cas
 ```bash
 claude plugin eval skills/<name> --eval-dir tests/evals --scaffold --allow-tools Bash Write Edit --runs 1
 ```
+
+To write a skill's evals, run them, and improve or benchmark it, use `/skills-audit <name>`.
 
 ## Invocation
 

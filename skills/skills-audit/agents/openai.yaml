@@ -1,0 +1,5 @@
+interface:
+  display_name: "Skills Audit"
+  short_description: "Run a skill's evals, improve it, benchmark models"
+policy:
+  allow_implicit_invocation: false
