@@ -2,11 +2,11 @@
 # Tests for skills/codex-review/scripts/detect.sh. Offline: a fake `herdr`
 # on PATH stands in for the real one, and each case runs in a scrubbed env.
 #
-#   bash tests/detect.test.sh
+#   bash skills/codex-review/tests/detect.test.sh
 set -uo pipefail
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-DETECT="$ROOT/skills/codex-review/scripts/detect.sh"
+SKILL_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+DETECT="$SKILL_DIR/scripts/detect.sh"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 

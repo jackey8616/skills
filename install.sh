@@ -62,6 +62,8 @@ curl -fsSL "$CODELOAD/$REPO/tar.gz/$sha" 2>/dev/null | tar -xz -C "$tmp" 2>/dev/
   || { echo "error: could not download $REPO@$REF" >&2; exit 1; }
 src="$(echo "$tmp"/*/skills)"
 [ -d "$src" ] || { echo "error: no skills/ in $REPO@$sha" >&2; exit 1; }
+# A skill's tests/ is for working on it here, not for using it.
+rm -rf "$src"/*/tests
 
 names=()
 for skill_md in "$src"/*/SKILL.md; do

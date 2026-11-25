@@ -3,10 +3,10 @@
 # tarballs, so the real download path runs. Each case installs into a
 # throwaway $HOME, piping the script through bash like `curl | bash`.
 #
-#   bash tests/install.test.sh
+#   bash install.test.sh
 set -uo pipefail
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+ROOT="$(cd "$(dirname "$0")" && pwd)"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
@@ -127,6 +127,20 @@ run "$EMPTY"
 check "succeeds" '[ "$RC" -eq 0 ]'
 check "removes all owned skills" '[ ! -e "$(C)/alpha" ] && [ ! -e "$(A)/beta" ]'
 check "installs no literal * skill" '[ ! -e "$(C)/*" ]'
+
+echo "a skill's tests"
+newhome tests
+sha="$(sha_of tested)"
+dir="$WORK/src-tested/skills-$sha/skills/alpha"
+mkdir -p "$dir/tests"
+echo "alpha from tested" > "$dir/SKILL.md"
+echo "exit 0" > "$dir/tests/alpha.test.sh"
+tar -czf "$GH/codeload/$REPO/tar.gz/$sha" -C "$WORK/src-tested" "skills-$sha"
+resolve tested "$sha"
+run tested
+check "leaves tests/ out" '[ -f "$(C)/alpha/SKILL.md" ] && [ ! -e "$(C)/alpha/tests" ] && [ ! -e "$(A)/alpha/tests" ]'
+run tested
+check "reports unchanged on re-run" '[ "$(grep -c "unchanged alpha" <<<"$OUT")" -eq 2 ]'
 
 echo "uninstall"
 newhome uninstall
