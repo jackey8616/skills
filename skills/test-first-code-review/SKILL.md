@@ -19,7 +19,7 @@ Read-only means you never touch anything in the codebase. Running tests is the o
 - No edits, creates, or deletes in the repo — tracked or untracked. That includes `.git`: no commits, branch switches, stashes, resets, fetches, or worktrees.
 - No dependency installs, no test flags that write back (snapshot updates, `--fix`, auto-formatters).
 - No PR or issue comments, reviews, labels, or status changes. Findings go in your reply, nowhere else.
-- Take `git status --porcelain` before the first run and after the last. Anything the tests left behind is a finding — say what appeared. Don't clean it up.
+- Take `git status --porcelain` before the first run and after the last. Anything new in it is a **fix** finding (section 3): name each file and the test that wrote it. Don't clean it up. Files `.gitignore` covers (`__pycache__`, build output) don't show there and don't count: the project expects them.
 - Outside the repo, in a temp dir, you may write throwaway tests and negative controls to probe the change. Never copy them into the repo.
 
 ## 1. Pin the requirement
@@ -43,7 +43,7 @@ You MUST run the change's test cases, and you run them now — before reading th
 - Use the project's own runner and commands (package scripts, Makefile, CI config). Run the specific tests first, then the suite they live in.
 - Tests exist but can't run (missing dependency, no access) → stop. Verdict is "Cannot determine"; name what's missing and the command the user would run.
 - Record each command, revision, exit status, and pass/fail counts. Quote failure output verbatim — trimmed, not paraphrased.
-- When feasible, run the new tests against the base revision too. A test that passes without the change doesn't prove the change. Extract the base outside the repo with `git archive <base-rev> | tar -x -C <tmp-dir>` — it reads local `.git` only, no network. Only when the revision you need isn't in the local repo (an unfetched PR head), clone into a temp dir instead: `gh repo clone <repo> <tmp-dir>`. Delete temp dirs when done.
+- When feasible, run the new tests against the base revision too. A test that passes without the change doesn't prove the change. Extract the base outside the repo with `git archive <base-rev> | tar -x -C <tmp-dir>` — it reads local `.git` only, no network. Put the change's tests in the extract and run them from inside it, so the base code is what gets imported; run from the repo and you test the change twice. A new test that passes on the base is a finding, so first make sure the base really ran: the imported module's path, or a probe whose result differs between the two. Only when the revision you need isn't in the local repo (an unfetched PR head), clone into a temp dir instead: `gh repo clone <repo> <tmp-dir>`. Delete temp dirs when done.
 
 ## 3. Review the code
 
@@ -62,6 +62,7 @@ Then hunt for:
 - **Error** — wrong behaviour, a failing or flaky test, an unhandled case the requirement implies, a test that asserts nothing meaningful, a claim not covered.
 - **Misleading** — names, comments, test titles, commit messages, or PR text that claim something the code doesn't do. A test titled for a case it never reaches.
 - **Incorrect** — factual mistakes in docs, comments, or the PR description: wrong APIs, wrong numbers, wrong explanations of the root cause.
+- **Fix** — must be fixed before merge, though the requirement is met: files the test run leaves in the repo. A change can do exactly what was asked and still dirty every developer's tree on each run. That isn't a requirement failure, and it isn't fit to merge either.
 
 Every finding needs evidence: a `file:line`, a quoted test output, or a quoted line of the requirement. A failing throwaway test counts — quote its output. No evidence, no finding.
 
@@ -69,17 +70,18 @@ Every finding needs evidence: a `file:line`, a quoted test output, or a quoted l
 
 Pick exactly one:
 
-- **Meets requirement** — tests ran, every claim is met or untestable, and no **error** findings.
+- **Meets requirement** — tests ran, every claim is met or untestable, and no **error** or **fix** findings.
+- **Meets requirement, fixes required** — the same, except one or more **fix** findings stand. The change does what was asked; name what must be fixed before merge.
 - **Does not meet requirement** — the change has no tests, or any claim is not met or not covered, or any **error** finding stands.
 - **Cannot determine** — tests exist but couldn't run. Never use it for untestable claims or missing tests.
 
-Misleading and incorrect findings don't change the verdict on their own. Report them anyway.
+Misleading and incorrect findings don't change the verdict on their own. Report them anyway. A **fix** finding never turns a met requirement into Does not meet.
 
 ## 5. Reply
 
 ```
 ## Verdict
-Meets requirement | Does not meet requirement | Cannot determine — one-line reason
+Meets requirement | Meets requirement, fixes required | Does not meet requirement | Cannot determine — one-line reason
 
 ## Test runs
 | Command | Revision | Result |
@@ -89,7 +91,7 @@ Meets requirement | Does not meet requirement | Cannot determine — one-line re
 - [met | not met | not covered | untestable] <claim> — <which test shows it, or why untestable>
 
 ## Findings
-1. **[error|misleading|incorrect]** `path:line` — what is wrong, and the evidence.
+1. **[error|fix|misleading|incorrect]** `path:line` — what is wrong, and the evidence.
 ```
 
 Most severe finding first. Nothing found → say so in one line under Findings. Stopped early for no tests → Test runs and Requirement say "not run". Don't pad with style nits or praise.

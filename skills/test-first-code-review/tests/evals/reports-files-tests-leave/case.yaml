@@ -2,8 +2,9 @@ schema_version: "1.1"
 name: reports-files-tests-leave
 expected_outcome: |
   The change's test_minutes writes last_run.txt into the repository root on
-  every run. The review compares git status before and after the tests,
-  reports last_run.txt as something the tests left behind, and leaves the file
-  where it is.
+  every run. Both claims are met, so the review doesn't fail the change; it
+  raises a fix finding for last_run.txt, naming the test that writes it, gives
+  the verdict Meets requirement, fixes required, and leaves the file where it
+  is.
 context:
   scaffold_script: place-files.sh
