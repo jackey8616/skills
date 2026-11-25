@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Checks every skill against the rules in CLAUDE.md: frontmatter, the Codex
-# yaml, invocation set the same way in both harnesses, the README table, the
+# yaml, invocation set the same way in both harnesses ('Use when' in the
+# description only for model-invoked skills), the README table, the
 # scripts SKILL.md points at, and a listed test for every script.
 #
 #   bash lint-skills.sh [repo-root]
@@ -40,6 +41,14 @@ yaml_value() {
     sed -e 's/[[:space:]]*$//' -e 's/^"\(.*\)"$/\1/'
 }
 
+# policy_value <key> <file> — the value of `key:` inside the top-level
+# `policy:` block, and nowhere else.
+policy_value() {
+  awk -v key="$1" '/^[^ \t#]/ { inside = ($0 ~ /^policy:[ \t]*$/); next }
+       inside && index($0, key ":") && $0 ~ "^[ \t]+" key ":" {
+         v = $0; sub(/^[ \t]+[^:]+:[ \t]*/, "", v); sub(/[ \t]+$/, "", v); print v; exit }' "$2"
+}
+
 [ -d "$ROOT/skills" ] || { echo "FAIL no skills/ directory in $ROOT"; exit 1; }
 
 for dir in "$ROOT"/skills/*/; do
@@ -69,9 +78,11 @@ for dir in "$ROOT"/skills/*/; do
   fi
 
   description="$(printf '%s' "$fm" | field description)"
+  continued="$(printf '%s\n' "$fm" | awk '/^description:/ { if ((getline n) > 0 && n ~ /^[ \t]/) print 1; exit }')"
   case "$description" in
     "") fail "$at/SKILL.md: no description" ;;
     "|"* | ">"*) fail "$at/SKILL.md: description must be on the description: line itself" ;;
+    *) [ -z "$continued" ] || fail "$at/SKILL.md: description must be on the description: line itself, not run onto the next" ;;
   esac
   if [ "${#description}" -gt "$MAX_DESCRIPTION" ]; then
     fail "$at/SKILL.md: description is ${#description} characters, the limit is $MAX_DESCRIPTION"
@@ -89,10 +100,10 @@ for dir in "$ROOT"/skills/*/; do
 
   if [ "$user_invoked" -eq 1 ]; then
     if printf '%s' "$description" | grep -iq 'use when'; then
-      fail "$at/SKILL.md: user-invoked, so the description is one human-facing line with no trigger phrasing"
+      fail "$at/SKILL.md: user-invoked, so the description has no \"Use when\" trigger; one human-facing line"
     fi
   elif ! printf '%s' "$description" | grep -iq 'use when'; then
-    fail "$at/SKILL.md: model-invoked, so the description needs trigger phrasing (\"Use when the user…\")"
+    fail "$at/SKILL.md: model-invoked, so the description needs \"Use when\" trigger phrasing (\"Use when the user…\")"
   fi
 
   if [ ! -f "$yaml" ]; then
@@ -104,7 +115,7 @@ for dir in "$ROOT"/skills/*/; do
     [ -n "$(yaml_value short_description "$yaml")" ] ||
       fail "$at/agents/openai.yaml: no interface.short_description"
 
-    implicit="$(yaml_value allow_implicit_invocation "$yaml")"
+    implicit="$(policy_value allow_implicit_invocation "$yaml")"
     has_policy=0
     grep -q '^policy:' "$yaml" && has_policy=1
     if [ "$user_invoked" -eq 1 ] && [ "$implicit" != false ]; then
@@ -120,7 +131,7 @@ for dir in "$ROOT"/skills/*/; do
 
   while IFS= read -r ref; do
     [ -e "$dir/$ref" ] || fail "$at/SKILL.md: points at \${CLAUDE_SKILL_DIR}/$ref, which doesn't exist"
-  done < <(grep -o '\${CLAUDE_SKILL_DIR}/[^"`'"'"' )]*' "$skill" | sed 's|^\${CLAUDE_SKILL_DIR}/||' | sort -u)
+  done < <(grep -o '\${CLAUDE_SKILL_DIR}/[^"`'"'"' )]*' "$skill" | sed -e 's|^\${CLAUDE_SKILL_DIR}/||' -e 's/[.,;:]*$//' | sort -u)
 
   if [ -d "$dir/scripts" ] && [ -n "$(ls -A "$dir/scripts")" ] &&
      ! ls "$dir"/tests/*.test.sh >/dev/null 2>&1; then

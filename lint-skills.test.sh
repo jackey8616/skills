@@ -98,6 +98,8 @@ expect_pass "a SKILL.md past 500 lines only warns" \
   "seq 600 >> skills/alpha/SKILL.md" "WARN skills/alpha/SKILL.md: 607 lines"
 expect_pass "a quoted name and description pass" \
   "sed -i.bak -e 's/^name: alpha/name: \"alpha\"/' -e 's/^description: \\(.*\\)/description: \"\\1\"/' skills/alpha/SKILL.md"
+expect_pass "a path at the end of a sentence" \
+  "echo 'See \${CLAUDE_SKILL_DIR}/scripts/run.sh.' >> skills/beta/SKILL.md"
 expect_pass "a skill without scripts needs no tests" \
   "rm -r skills/beta/scripts skills/beta/tests && sed -i.bak '/CLAUDE_SKILL_DIR/d' skills/beta/SKILL.md && : > CLAUDE.md"
 
@@ -115,13 +117,15 @@ expect_fail "no description" "skills/alpha/SKILL.md: no description" \
   "sed -i.bak '/^description:/d' skills/alpha/SKILL.md"
 expect_fail "a block-scalar description" "description must be on the description: line" \
   "sed -i.bak 's/^description: .*/description: >/' skills/alpha/SKILL.md"
+expect_fail "a description that runs onto a second line" "description must be on the description: line" \
+  "sed -i.bak 's/^description: .*/description: Do the alpha\\n  thing./' skills/alpha/SKILL.md"
 expect_fail "a description past 1024 characters" "description is 1025 characters" \
   "sed -i.bak \"s/^description: .*/description: \$(printf 'a%.0s' \$(seq 1025))/\" skills/alpha/SKILL.md"
 expect_fail "disable-model-invocation: false" "disable-model-invocation is 'false'" \
   "sed -i.bak 's/^disable-model-invocation: true/disable-model-invocation: false/' skills/alpha/SKILL.md && sed -i.bak '/policy/,\$d' skills/alpha/agents/openai.yaml && sed -i.bak 's/thing\\.\$/thing. Use when asked./' skills/alpha/SKILL.md"
-expect_fail "user-invoked with trigger phrasing" "user-invoked, so the description is one human-facing line" \
+expect_fail "user-invoked with trigger phrasing" "user-invoked, so the description has no \"Use when\" trigger" \
   "sed -i.bak 's/^description: .*/description: Use when the user asks for alpha./' skills/alpha/SKILL.md"
-expect_fail "model-invoked without trigger phrasing" "model-invoked, so the description needs trigger phrasing" \
+expect_fail "model-invoked without trigger phrasing" "model-invoked, so the description needs \"Use when\" trigger" \
   "sed -i.bak 's/^description: .*/description: Do the beta thing./' skills/beta/SKILL.md"
 expect_fail "no agents/openai.yaml" "skills/alpha: no agents/openai.yaml" \
   "rm skills/alpha/agents/openai.yaml"
@@ -133,6 +137,8 @@ expect_fail "user-invoked in SKILL.md only" "user-invoked in SKILL.md, but agent
   "sed -i.bak '/policy/,\$d' skills/alpha/agents/openai.yaml"
 expect_fail "user-invoked with allow_implicit_invocation: true" "user-invoked in SKILL.md, but agents/openai.yaml lacks" \
   "sed -i.bak 's/allow_implicit_invocation: false/allow_implicit_invocation: true/' skills/alpha/agents/openai.yaml"
+expect_fail "user-invoked with the setting outside policy:" "user-invoked in SKILL.md, but agents/openai.yaml lacks" \
+  "sed -i.bak '/^policy:/d' skills/alpha/agents/openai.yaml"
 expect_fail "model-invoked with a policy block in openai.yaml" "model-invoked in SKILL.md, so agents/openai.yaml has no policy block" \
   "printf 'policy:\n  allow_implicit_invocation: false\n' >> skills/beta/agents/openai.yaml"
 expect_fail "missing from the README table" "skills/beta: no row in README.md" \
