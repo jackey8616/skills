@@ -47,8 +47,10 @@ expect "herdr not installed → standalone" \
   standalone "$WORK/nobin" HERDR_ENV=1 HERDR_WORKSPACE_ID=w42
 expect "server not answering → standalone" \
   standalone "$WORK/bin" HERDR_ENV=1 HERDR_WORKSPACE_ID=w42 FAKE_HERDR_RC=1
-expect "inside a live Herdr pane → herdr <workspace>" \
-  "herdr w42" "$WORK/bin" HERDR_ENV=1 HERDR_WORKSPACE_ID=w42
+expect "inside a live Herdr pane → herdr <workspace> <reviewer>" \
+  "herdr w42 reviewer-w42" "$WORK/bin" HERDR_ENV=1 HERDR_WORKSPACE_ID=w42
+expect "uppercase workspace id → reviewer name in lowercase, id as is" \
+  "herdr w1M reviewer-w1m" "$WORK/bin" HERDR_ENV=1 HERDR_WORKSPACE_ID=w1M
 
 echo
 echo "$pass passed, $fail failed"
