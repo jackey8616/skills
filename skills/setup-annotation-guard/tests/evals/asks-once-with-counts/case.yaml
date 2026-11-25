@@ -1,0 +1,11 @@
+schema_version: "1.1"
+name: asks-once-with-counts
+expected_outcome: |
+  A clean repository with Python, TypeScript, and YAML comments, two tool
+  directives the repo configures (a shebang, a noqa for ruff), an eslint-
+  disable with no ESLint configured, docstrings and a JSDoc comment, vendored
+  code, and comments in a Makefile and pyproject.toml that ast-grep can't
+  parse. Nobody is there to answer, so the run stops at Ask once: one batch of
+  questions, with the inventory's real numbers, before any rule is written.
+context:
+  scaffold_script: place-files.sh

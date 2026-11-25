@@ -57,7 +57,7 @@ As each run finishes, collect it at once. The completion notice is the only plac
 python3 "${CLAUDE_SKILL_DIR}/scripts/collect.py" <it> <case> <config> --tokens <n> --ms <n> --transcript <path>
 ```
 
-Don't read transcripts yourself. They're long, and `collect.py` writes the trimmed `transcript.md` the graders need. `outputs/repo-state.md` (a project that's a git repo) or `outputs/project-state.md` (one that isn't) comes from the disk, not from the run: it is the evidence for whether the run changed the project.
+Don't read transcripts yourself. They're long, and `collect.py` writes the trimmed `transcript.md` the graders need. `outputs/repo-state.md` (a project that's a git repo) or `outputs/project-state.md` (one that isn't) comes from the disk, not from the run: it is the evidence for whether the run changed the project. For a repo, `outputs/changes.diff` holds everything it changed. A case with a `post-check.sh` gets `outputs/post-check.md`: the script's checks of the result, run in a copy of the project.
 
 No subagent tool (Codex) → run the cases with section 8's command at the current model instead, one config per run, and say that the `old_skill` comparison isn't available.
 
@@ -68,7 +68,7 @@ One grader subagent per case, grading every config of that case, each on its own
 ```
 You are a grader. Read <sc>/agents/grader.md and follow it, once for each run below. Grade each on its own evidence; don't compare them.
 - expectations: the `assertions` in <it>/<case>/eval_metadata.json
-- runs: <it>/<case>/<config>/ for each config there (with_skill alone in iteration 1). For each run R: transcript_path R/transcript.md; outputs_dir R/outputs (reply.md is the final reply; repo-state.md or project-state.md is the project's state after the run, read from the disk, and the primary evidence for any expectation about changes to it). Write R/grading.json with `text`, `passed`, `evidence` in `expectations`, a `summary`, and `eval_feedback` when you find a real gap.
+- runs: <it>/<case>/<config>/ for each config there (with_skill alone in iteration 1). For each run R: transcript_path R/transcript.md; outputs_dir R/outputs (reply.md is the final reply; repo-state.md or project-state.md is the project's state after the run, read from the disk, changes.diff what it changed, and post-check.md, if present, checks of the result; together they're the primary evidence for any expectation about the project). Write R/grading.json with `text`, `passed`, `evidence` in `expectations`, a `summary`, and `eval_feedback` when you find a real gap.
 Your final message: per run, PASS/FAIL per expectation, and any eval_feedback.
 ```
 

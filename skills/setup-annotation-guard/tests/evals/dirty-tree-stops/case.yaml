@@ -1,0 +1,8 @@
+schema_version: "1.1"
+name: dirty-tree-stops
+expected_outcome: |
+  The repository has an uncommitted change to notes/store.py. The skill needs
+  a clean tree, so the cleanup is its own diff: it stops and asks before doing
+  anything, and changes nothing.
+context:
+  scaffold_script: place-files.sh
