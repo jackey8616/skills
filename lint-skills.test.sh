@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Tests for lint-skills.sh. Offline: each case builds a small repo in a temp
+# Tests for lint-skills.py. Offline: each case builds a small repo in a temp
 # dir, breaks one rule, and checks the lint fails on it and only it.
 #
 #   bash lint-skills.test.sh
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
-LINT="$ROOT/lint-skills.sh"
+LINT="$ROOT/lint-skills.py"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
@@ -69,7 +69,7 @@ expect_fail() {
   fixture "$r"
   (cd "$r" && eval "$setup")
   local out rc=0
-  out="$(bash "$LINT" "$r" 2>&1)" || rc=$?
+  out="$(python3 "$LINT" "$r" 2>&1)" || rc=$?
   if [ "$rc" -eq 1 ] && [ "$(printf '%s\n' "$out" | grep -c '^FAIL')" -eq 1 ] &&
      printf '%s\n' "$out" | grep '^FAIL' | grep -Fq "$want"; then
     ok "$name"
@@ -85,7 +85,7 @@ expect_pass() {
   fixture "$r"
   (cd "$r" && eval "$setup")
   local out rc=0
-  out="$(bash "$LINT" "$r" 2>&1)" || rc=$?
+  out="$(python3 "$LINT" "$r" 2>&1)" || rc=$?
   if [ "$rc" -eq 0 ] && { [ -z "$want" ] || printf '%s\n' "$out" | grep -Fq "$want"; }; then
     ok "$name"
   else
@@ -116,12 +116,12 @@ expect_fail "uppercase directory name" "name must be lowercase" \
 expect_fail "no description" "skills/alpha/SKILL.md: no description" \
   "sed -i.bak '/^description:/d' skills/alpha/SKILL.md"
 expect_fail "a block-scalar description" "description must be on the description: line" \
-  "sed -i.bak 's/^description: .*/description: >/' skills/alpha/SKILL.md"
+  "sed -i.bak 's/^description: .*/description: >\\n  Do the alpha thing./' skills/alpha/SKILL.md"
 expect_fail "a description that runs onto a second line" "description must be on the description: line" \
   "sed -i.bak 's/^description: .*/description: Do the alpha\\n  thing./' skills/alpha/SKILL.md"
 expect_fail "a description past 1024 characters" "description is 1025 characters" \
   "sed -i.bak \"s/^description: .*/description: \$(printf 'a%.0s' \$(seq 1025))/\" skills/alpha/SKILL.md"
-expect_fail "disable-model-invocation: false" "disable-model-invocation is 'false'" \
+expect_fail "disable-model-invocation: false" "disable-model-invocation is false;" \
   "sed -i.bak 's/^disable-model-invocation: true/disable-model-invocation: false/' skills/alpha/SKILL.md && sed -i.bak '/policy/,\$d' skills/alpha/agents/openai.yaml && sed -i.bak 's/thing\\.\$/thing. Use when asked./' skills/alpha/SKILL.md"
 expect_fail "user-invoked with trigger phrasing" "user-invoked, so the description has no \"Use when\" trigger" \
   "sed -i.bak 's/^description: .*/description: Use when the user asks for alpha./' skills/alpha/SKILL.md"
@@ -167,7 +167,26 @@ expect_pass "inline comments in openai.yaml" \
 expect_fail "display_name outside interface:" "no interface.display_name" \
   "printf 'interface:\n  short_description: \"Do it\"\npolicy:\n  allow_implicit_invocation: false\n  display_name: \"Alpha\"\n' > skills/alpha/agents/openai.yaml"
 
-out="$(bash "$LINT" 2>&1)" && ok "this repo passes" || bad "this repo passes" "$out"
+expect_fail "a continuation after a blank line" "description must be on the description: line" \
+  "sed -i.bak 's/^description: .*/description: Do the alpha\n\n  thing./' skills/alpha/SKILL.md"
+expect_fail "a comment line inside the description" "SKILL.md frontmatter: not valid YAML" \
+  "sed -i.bak 's/^description: .*/description: Do the alpha\n# note\n  thing./' skills/alpha/SKILL.md"
+expect_pass "a quoted one-line description starting with |" \
+  "sed -i.bak 's/^description: .*/description: \"| pipes and filters, done the alpha way.\"/' skills/alpha/SKILL.md"
+expect_pass "an inline comment on disable-model-invocation" \
+  "sed -i.bak 's/^disable-model-invocation: true/& # user-invoked/' skills/alpha/SKILL.md"
+expect_pass "a long inline comment after a short description" \
+  "sed -i.bak \"s/^description: .*/description: Do it. # \$(printf 'a%.0s' \$(seq 1100))/\" skills/alpha/SKILL.md"
+expect_fail "allow_implicit_invocation: \"false\" is a string" "user-invoked in SKILL.md, but agents/openai.yaml lacks" \
+  "sed -i.bak 's/allow_implicit_invocation: false/allow_implicit_invocation: \"false\"/' skills/alpha/agents/openai.yaml"
+expect_fail "an empty single-quoted display_name" "no interface.display_name" \
+  "sed -i.bak \"s/display_name: .*/display_name: ''/\" skills/alpha/agents/openai.yaml"
+expect_fail "openai.yaml that isn't valid YAML" "skills/alpha/agents/openai.yaml: not valid YAML" \
+  "printf 'interface: [\n' > skills/alpha/agents/openai.yaml"
+expect_fail "a skill's test outside tests/" "skills/beta/other/x.test.sh: a skill's tests go in" \
+  "mkdir skills/beta/other && touch skills/beta/other/x.test.sh && echo '- \`bash skills/beta/other/x.test.sh\`' >> CLAUDE.md"
+
+out="$(python3 "$LINT" 2>&1)" && ok "this repo passes" || bad "this repo passes" "$out"
 
 echo
 echo "$pass passed, $fail failed"
