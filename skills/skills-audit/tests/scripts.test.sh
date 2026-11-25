@@ -115,9 +115,12 @@ out="$(python3 "$SCRIPTS/collect.py" "$it" plain-case with_skill --tokens 1 --ms
 check "a project that isn't a repo gets project-state, not repo-state" \
   '[ "$out" = "plain-case/with_skill: reply MISSING, files unchanged, no transcript" ] && [ ! -e "$it/plain-case/with_skill/outputs/repo-state.md" ] && grep -q "^- Created: none$" "$it/plain-case/with_skill/outputs/project-state.md"' "$out"
 mkdir -p "$(field free-case with_skill project)/sub" && echo x > "$(field free-case with_skill project)/sub/made.py"
+echo y > "$(field free-case with_skill tmp)/probe.csv"
 out="$(python3 "$SCRIPTS/collect.py" "$it" free-case with_skill --tokens 1 --ms 1 2>&1)"
 check "project-state names a file the run created" \
   '[ "$out" = "free-case/with_skill: reply MISSING, files CHANGED, no transcript" ] && grep -qF -- "- Created: \`sub/made.py\`" "$it/free-case/with_skill/outputs/project-state.md"' "$out"
+check "state files list what the run left in its temp directory" \
+  'grep -qF -- "- Left in the temp directory: \`probe.csv\`" "$it/free-case/with_skill/outputs/project-state.md" && grep -qF -- "- Left in the temp directory: nothing" "$it/plain-case/with_skill/outputs/project-state.md" && grep -qF -- "- Left in the temp directory: nothing" "$it/repo-case/with_skill/outputs/repo-state.md"' "$(cat "$it/free-case/with_skill/outputs/project-state.md")"
 
 echo "check-evals.py"
 # ce <skill-dir> — check-evals.py's lines in $CE, its exit status in $RC.

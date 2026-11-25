@@ -14,7 +14,9 @@ path the subagent tool gave when the run started. Writes, in
   timing.json
 
 repo-state.md and project-state.md are the evidence for anything about
-changes to the project: they come from the disk, not from what the run says. Prints a one-line summary.
+changes to the project: they come from the disk, not from what the run says.
+Both end with what the run left in its temp directory: a file there means
+the run wrote one, which a skill that should only answer mustn't. Prints a one-line summary.
 """
 import json
 import subprocess
@@ -73,6 +75,12 @@ def project_state(run):
     return "\n".join(lines), not created and not deleted
 
 
+def temp_files(run):
+    tmp = Path(run["tmp"])
+    left = sorted(str(f.relative_to(tmp)) for f in tmp.rglob("*") if f.is_file()) if tmp.is_dir() else []
+    return "- Left in the temp directory: " + (", ".join(f"`{f}`" for f in left) or "nothing") + "\n"
+
+
 def trim(text, n):
     text = text if isinstance(text, str) else json.dumps(text)
     return text if len(text) <= n else text[:n] + f"\n… [{len(text) - n} more chars]"
@@ -128,11 +136,11 @@ def main(argv):
 
     if run["start_head"]:
         text, unchanged = repo_state(run)
-        (out / "repo-state.md").write_text(text)
+        (out / "repo-state.md").write_text(text + temp_files(run))
         summary.append("HEAD " + ("unchanged" if unchanged else "CHANGED"))
     else:
         text, unchanged = project_state(run)
-        (out / "project-state.md").write_text(text)
+        (out / "project-state.md").write_text(text + temp_files(run))
         summary.append("files " + ("unchanged" if unchanged else "CHANGED"))
 
     if transcript_path and Path(transcript_path).is_file():
