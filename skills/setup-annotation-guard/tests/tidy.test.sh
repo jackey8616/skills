@@ -5,11 +5,11 @@
 # would have printed, and checks what tidy.py makes of it.
 # In the fixtures, · stands for a space, so trailing spaces stay visible.
 #
-#   bash tests/tidy.test.sh
+#   bash skills/setup-annotation-guard/tests/tidy.test.sh
 set -uo pipefail
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-TIDY="$ROOT/skills/setup-annotation-guard/scripts/tidy.py"
+SKILL_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+TIDY="$SKILL_DIR/scripts/tidy.py"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 

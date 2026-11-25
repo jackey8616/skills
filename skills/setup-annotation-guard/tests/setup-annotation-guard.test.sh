@@ -5,12 +5,12 @@
 # command lines for scripts/ledger.sh, remove.sh, and checks.sh are read from
 # SKILL.md itself, so the skill and these tests can't drift apart.
 #
-#   bash tests/setup-annotation-guard.test.sh
-#   AST_GREP=/path/to/ast-grep bash tests/setup-annotation-guard.test.sh
+#   bash skills/setup-annotation-guard/tests/setup-annotation-guard.test.sh
+#   AST_GREP=/path/to/ast-grep bash skills/setup-annotation-guard/tests/setup-annotation-guard.test.sh
 set -uo pipefail
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-SKILL="$ROOT/skills/setup-annotation-guard/SKILL.md"
+SKILL_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+SKILL="$SKILL_DIR/SKILL.md"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
@@ -35,7 +35,7 @@ echo "ast-grep $(ast-grep --version | awk '{print $2}')"
 # scripts, with the placeholders filled in.
 skill_cmd() {
   grep -m1 "scripts/$1\"" "$SKILL" | sed -e 's/^ *//' -e "s|<scratchpad>|$2|g" \
-    -e "s|\${CLAUDE_SKILL_DIR}|$ROOT/skills/setup-annotation-guard|g"
+    -e "s|\${CLAUDE_SKILL_DIR}|$SKILL_DIR|g"
 }
 
 # count <lang> <file> <rule> — number of matches of an inline rule.
@@ -304,7 +304,7 @@ bad_grep="$(grep -n "git grep" "$SKILL" | grep 'ast-grep\[-\]ignore' | grep -v -
 [ -z "$bad_grep" ] && ok "every git grep for the token in SKILL.md uses -G" || bad "git grep without -G" "$bad_grep"
 
 rm -rf "$chk/out" && mkdir -p "$chk/out/build.log"
-rc=0; (cd "$chk" && bash "$ROOT/skills/setup-annotation-guard/scripts/checks.sh" "$chk/checks.txt" "$chk/out" >/dev/null 2>&1) || rc=$?
+rc=0; (cd "$chk" && bash "$SKILL_DIR/scripts/checks.sh" "$chk/checks.txt" "$chk/out" >/dev/null 2>&1) || rc=$?
 [ "$rc" = 2 ] && ! grep -q '^lint' "$chk/out/status.txt" && ok "exits 2, before running anything more, when a log can't be written" \
   || bad "log write failure" "exit $rc"
 
