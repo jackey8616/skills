@@ -205,6 +205,32 @@ expect_fail "README links a skill directory that doesn't exist" "README.md: link
 expect_pass "a path followed by a comma, a colon, or a semicolon" \
   "printf 'Run \${CLAUDE_SKILL_DIR}/scripts/run.sh, \${CLAUDE_SKILL_DIR}/scripts/run.sh: \${CLAUDE_SKILL_DIR}/scripts/run.sh;\n' >> skills/beta/SKILL.md"
 
+expect_fail "a key written twice under policy:" "policy.allow_implicit_invocation: appears twice" \
+  "sed -i.bak 's/  allow_implicit_invocation: false/  allow_implicit_invocation: true\n&/' skills/alpha/agents/openai.yaml"
+expect_fail "a key written twice under a frontmatter mapping" "metadata.a: appears twice" \
+  "sed -i.bak 's/^name: alpha/&\nmetadata:\n  a: 1\n  a: 2/' skills/alpha/SKILL.md"
+expect_fail "a hidden test file CI's glob skips" ".hidden.test.sh: tests sit at the repo root or in skills/<name>/tests/" \
+  "touch .hidden.test.sh && echo '- \`bash .hidden.test.sh\`' >> CLAUDE.md"
+expect_fail "a test nested below tests/" "skills/beta/tests/sub/x.test.sh: tests sit at the repo root or in skills/<name>/tests/" \
+  "mkdir skills/beta/tests/sub && touch skills/beta/tests/sub/x.test.sh && echo '- \`bash skills/beta/tests/sub/x.test.sh\`' >> CLAUDE.md"
+expect_fail "a skill linked in a row's second column" "skills/beta: no row in README.md" \
+  "sed -i.bak '/beta/d' README.md && echo '| Beta | [\`beta\`](skills/beta/SKILL.md) |' >> README.md"
+expect_fail "a reference-style README link to a missing skill" "README.md: links skills/gone/SKILL.md" \
+  "echo '[gone]: skills/gone/SKILL.md' >> README.md"
+expect_fail "a ./skills README link to a missing skill" "README.md: links skills/gone2/SKILL.md" \
+  "echo 'See [x](./skills/gone2/SKILL.md).' >> README.md"
+expect_pass "a README link with a title" \
+  "echo 'See [\`beta\`](skills/beta/SKILL.md \"Beta\").' >> README.md"
+expect_fail "disable-model-invocation: yes" "disable-model-invocation is yes; write it as true" \
+  "sed -i.bak 's/^disable-model-invocation: true/disable-model-invocation: yes/' skills/alpha/SKILL.md"
+expect_fail "allow_implicit_invocation: off" "policy.allow_implicit_invocation is off; write it as false" \
+  "sed -i.bak 's/allow_implicit_invocation: false/allow_implicit_invocation: off/' skills/alpha/agents/openai.yaml"
+
+expect_fail "disable-model-invocation from a merge key" "disable-model-invocation is merged in; write it as true" \
+  "sed -i.bak 's/^disable-model-invocation: true/d: \&d {disable-model-invocation: true}\n<<: *d/' skills/alpha/SKILL.md"
+expect_fail "allow_implicit_invocation from a merge key" "policy.allow_implicit_invocation is merged in; write it as false" \
+  "printf 'interface:\n  display_name: \"Alpha\"\n  short_description: \"x\"\nbase: &b {allow_implicit_invocation: false}\npolicy:\n  <<: *b\n' > skills/alpha/agents/openai.yaml"
+
 fake="$WORK/no-yaml"
 mkdir -p "$fake/yaml"
 echo 'raise ImportError("no yaml here")' > "$fake/yaml/__init__.py"
