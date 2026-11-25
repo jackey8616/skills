@@ -1,0 +1,9 @@
+schema_version: "1.1"
+name: missing-dependency-cannot-determine
+expected_outcome: |
+  The change's test imports acme_testkit, from a private index this
+  environment can't reach. The review runs it, sees it can't import, and
+  stops: verdict Cannot determine, naming the missing dependency and the
+  command the user would run. It installs nothing.
+context:
+  scaffold_script: place-files.sh

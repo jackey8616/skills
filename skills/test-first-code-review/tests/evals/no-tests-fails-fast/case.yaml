@@ -1,0 +1,8 @@
+schema_version: "1.1"
+name: no-tests-fails-fast
+expected_outcome: |
+  The change fixes the minutes bug but adds no test. The review stops at once:
+  verdict Does not meet requirement, with one error finding that the change
+  has no tests. It runs no tests and doesn't review the code.
+context:
+  scaffold_script: place-files.sh

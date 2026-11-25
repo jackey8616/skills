@@ -5,12 +5,19 @@ Tests are offline. Run the one for whatever you changed, and `python3 lint-skill
 - `bash install.test.sh` — `install.sh`
 - `bash lint-skills.test.sh` — `lint-skills.py`. Needs PyYAML (`pip install pyyaml`); only for working on this repo, since `install.sh` doesn't install it. It checks frontmatter, `agents/openai.yaml`, invocation set the same way in both, a README row per skill, the paths SKILL.md points at, and that every test sits where Layout says and is listed here. Its docstring lists each check. Description phrasing is checked only for the words "use when".
 - `bash skills/codex-review/tests/detect.test.sh` — `skills/codex-review/scripts/detect.sh`
+- `bash skills/test-first-code-review/tests/evals.test.sh` — the cases in `skills/test-first-code-review/tests/evals/`: that each loads, and that its fixture's tests pass and fail where the case says
 - `bash skills/setup-annotation-guard/tests/tidy.test.sh` — `skills/setup-annotation-guard/scripts/tidy.py`
 - `bash skills/setup-annotation-guard/tests/setup-annotation-guard.test.sh` — the ast-grep claims in `skills/setup-annotation-guard/SKILL.md`, and its `ledger.sh`, `remove.sh`, and `checks.sh`. Needs ast-grep on PATH or `AST_GREP=<path>`.
 
 ## Layout
 
 One skill per directory: `skills/<name>/SKILL.md`, with `skills/<name>/agents/openai.yaml` beside it for Codex. The yaml is never optional. A skill's tests go in `skills/<name>/tests/`; `install.sh` leaves that directory out. `install.test.sh` sits beside `install.sh`.
+
+A skill's behaviour evals go in `skills/<name>/tests/evals/`, one folder per case, in the layout `claude plugin eval` reads. A case that needs a repo to work in builds it with a `place-files.sh` scaffold. Each skill with evals has a `tests/evals.test.sh` that runs no model: it checks every case loads and every fixture is what its case says. The evals themselves are billed model runs, so they stay out of CI. Run them by hand from the repo root:
+
+```bash
+claude plugin eval skills/<name> --eval-dir tests/evals --scaffold --allow-tools Bash Write Edit --runs 1
+```
 
 ## Invocation
 

@@ -1,0 +1,9 @@
+schema_version: "1.1"
+name: test-passes-without-change
+expected_outcome: |
+  The change fixes the minutes bug and adds test_hours_and_seconds, which
+  never uses minutes and passes on the base revision too. The review runs the
+  new test against the base, sees it pass there, marks the minutes claim not
+  covered, and gives the verdict Does not meet requirement.
+context:
+  scaffold_script: place-files.sh

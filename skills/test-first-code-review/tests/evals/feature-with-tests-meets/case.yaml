@@ -1,0 +1,9 @@
+schema_version: "1.1"
+name: feature-with-tests-meets
+expected_outcome: |
+  A feature, not a fix: days in parse_duration, with a test for each claim.
+  Both tests fail on the base revision and pass on the change. The review
+  marks both claims met and gives the verdict Meets requirement, without
+  objecting that the change isn't a bug fix.
+context:
+  scaffold_script: place-files.sh
