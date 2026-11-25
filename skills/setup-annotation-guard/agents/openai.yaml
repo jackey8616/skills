@@ -1,0 +1,5 @@
+interface:
+  display_name: "Setup Annotation Guard"
+  short_description: "Ban code comments with an ast-grep lint rule"
+policy:
+  allow_implicit_invocation: false
