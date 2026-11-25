@@ -86,7 +86,7 @@ Before generating the viewer, add to `notes` in `benchmark.json` what the pass r
 - Assertions the graders say a do-nothing or wrong-but-lucky run would pass.
 - Runs that handled the same situation differently. Two runs taking different paths through one rule usually means the skill doesn't say. That's a skill gap, not noise.
 
-Send the viewer page to the user as soon as it's written, before your own write-up, so they can read the runs first. When the user writes in another language, offer a translated page. Copy the iteration directory, translate only the readable strings in each `grading.json` and the `notes`, and keep code, paths, names, and the skill's own verdict words as they are. Check that every `passed` list is unchanged, then generate the page from the copy.
+Send the viewer page to the user as soon as it's written, before your own write-up, so they can read the runs first.
 
 ## 6. Report
 
