@@ -28,6 +28,8 @@ The guard is ast-grep, not this skill. Everything an agent is allowed to write l
   test: npm test
   ```
 
+  Dependencies not installed (a fresh clone with no `node_modules`, no virtualenv) → install them first with the command CI uses (`npm ci`), or every check fails before and after alike and the comparison proves nothing. It changes no tracked file.
+
   Then record the baseline section 6 compares against, and `<base>`, the revision the ledger (section 3) refers to, which stays put when the user commits. `<base>` from here on is the sha this saves in `<scratchpad>/base`:
 
   ```bash
@@ -67,6 +69,8 @@ Unparseable files and invisible embedded code both go in the reply under Unguard
 Find any `ast-grep-ignore` already in the repo (`git grep -n -G 'ast-grep[-]ignore'`; `-G` so `grep.patternType` can't change the pattern). It hides comments from every scan, and section 4 bans it everywhere. The ledger (section 3) records each such line and the comments it hid; section 5 deletes it, in ignored paths too.
 
 Markdown is prose, not code: leave it out of the inventory and the counts. Its `#` lines are headings, not comments.
+
+JSON is data, not code: no rule for it, `.json` and JSONC (`tsconfig.json`) alike. Guarding it would mean telling generated JSON, fixtures, and lockfiles apart by judgement. Count its comments with the dump below, language `Json`, kind `comment`; any found go under Unguarded with the unparseable files.
 
 Then dump every comment in the repo, one JSON object per line, and group them by their first few characters:
 
@@ -333,8 +337,8 @@ All must hold. Report each with its evidence:
   Compare `status.txt` and each log's pass/fail counts with `<scratchpad>/before`. A difference means the cleanup changed behaviour. Find the file at the failing spot and diff it against the sha in `<scratchpad>/snap`. A removed directive → add it to the exceptions, restore it, and re-run. Code the removal changed → put it back as it was, minus the comment, and re-run. A lint command this skill created has no baseline; report it as absent before, passing after.
 - `ast-grep test --skip-snapshot-tests` passes.
 - The full lint command from section 4 passes on the cleaned repo.
-- The guard catches the file-level bypass: put a comment containing `ast-grep-ignore`, a blank line, and another comment in a new, unstaged file in the repo, and run the repo's lint target (not the bare command). An exit code alone proves nothing; it could fail for another reason. It must fail with `git grep` printing that file's line. Then delete the `ast-grep-ignore` line from the same file and run it again: now the scan must report the other comment. Delete the file.
-- Rule tests check one language at a time, so they can't show HTML being reached. If the repo has HTML: put a new `.html` file with a comment in `<script>` and one in `<style>` in a guarded directory, run the lint target, confirm the scan reports both, and delete the file.
+- The guard catches the file-level bypass: put a comment containing `ast-grep-ignore`, a blank line, and another comment in a new, unstaged file at the repo root, `annotation-guard-probe.<ext>`, `<ext>` the extension of the language of the first guard rule file in name order, and run the repo's lint target (not the bare command). An exit code alone proves nothing; it could fail for another reason. It must fail with `git grep` printing that file's line. Then delete the `ast-grep-ignore` line from the same file and run it again: now the scan must report the other comment. Delete the file.
+- Rule tests check one language at a time, so they can't show HTML being reached. If the repo has HTML: put a comment in `<script>` and one in `<style>` in a new file at the repo root, `annotation-guard-probe.html`, run the lint target, confirm the scan reports both, and delete the file.
 
 A check that can't run → say so and name what's missing. Don't call the setup done.
 
