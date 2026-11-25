@@ -1,14 +1,13 @@
 ---
 name: codex-review
-description: Send the current implementation to Codex for test-first review, fix what it finds, and repeat until it passes. Uses a Herdr reviewer tab when available.
-disable-model-invocation: true
+description: Send the current implementation to Codex for test-first review, fix what it finds, and repeat until it passes, in a Herdr reviewer tab when available. Use when the user asks for Codex to review their work, for a second model's review, or for a review-and-fix loop before they push. For a single review with no fixing, use test-first-code-review.
 ---
 
 # Codex review
 
 You are the implementer. Codex is the reviewer. Hand your work in the current working tree to Codex, which runs `test-first-code-review` on it; fix what it finds; send it back. Repeat until it passes or the loop stops.
 
-`$ARGUMENTS` is what the work is for: a purpose statement, a PR link, or an issue link. Empty → ask. Do nothing else first.
+`$ARGUMENTS` is what the work is for: a purpose statement, a PR link, or an issue link. Empty → take it from the conversation: the issue, PR, or task you were given for this work, and say which you took. Nothing there → ask. Do nothing else first.
 
 ## 1. Pick the mode
 
