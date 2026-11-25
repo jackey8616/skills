@@ -126,14 +126,13 @@ With approvals off, what's left is mostly Codex's one-time startup prompts. What
 ### Send a round
 
 ```bash
-herdr agent prompt <reviewer> "$(cat <tmp>/codex-review-prompt-<n>.md)"
-herdr agent wait <reviewer> --until working --timeout 10000
-herdr agent wait <reviewer> --timeout 540000
+herdr agent prompt <reviewer> "$(cat <tmp>/codex-review-prompt-<n>.md)" --wait --timeout 540000
 ```
 
-The `$(cat …)` output isn't expanded again, so the `$` survives. Wait for `working` first: a reviewer just started, or done with the last round, already reads `done`, so a bare wait, or `agent prompt --wait`, returns before Codex has begun. Ignore a timeout on the first wait.
+The `$(cat …)` output isn't expanded again, so the `$` survives. `--wait` matches only states seen after the prompt goes in, so a reviewer still reading `done` from the last round doesn't end it early.
 
 - Returns `agent_blocked` before sending → relay, then send again.
+- Returns `agent_prompt_stalled` → Codex didn't start within 5 seconds. Don't resend. `herdr agent wait <reviewer> --until working --until blocked --timeout 60000`, then wait for it to settle; neither seen → read the screen and show the user.
 - Settles `blocked` → relay, until it settles `idle` or `done`.
 - `timeout` → `herdr agent wait <reviewer> --timeout 540000` again. Never resubmit: a timeout doesn't mean the prompt wasn't delivered.
 
