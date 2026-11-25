@@ -1,5 +1,3 @@
 interface:
   display_name: "Test-First Code Review"
   short_description: "Run the tests first, then review the change"
-policy:
-  allow_implicit_invocation: false

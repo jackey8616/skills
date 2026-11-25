@@ -1,7 +1,6 @@
 ---
 name: test-first-code-review
-description: Review a change, fix or feature, by running its tests first, then reading the code. Takes a purpose, PR, or issue. Never touches the codebase.
-disable-model-invocation: true
+description: Review a change, fix or feature, by running its tests first, then reading the code, without touching the codebase. Use when the user asks to review a fix, a feature, a PR, or the change for an issue, or to check whether a change meets its requirement and whether its tests prove it.
 ---
 
 # Test-first code review
@@ -10,7 +9,7 @@ You are the reviewer of `$ARGUMENTS`: a purpose statement, a PR link, or an issu
 
 Tests come first. Run them before you read the implementation, so the outcome of the run — not your reading of the code — sets what the review looks at. Then report every error, misleading, or incorrect content you find.
 
-`$ARGUMENTS` empty → ask what to review. Do nothing else first.
+`$ARGUMENTS` empty → take the purpose from the conversation: the issue, PR, or task the user gave for this change, and say which you took. Nothing there → ask what to review. Do nothing else first.
 
 ## Read-only
 

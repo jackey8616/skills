@@ -1,5 +1,3 @@
 interface:
   display_name: "Codex Review"
   short_description: "Loop Codex test-first review and fixes"
-policy:
-  allow_implicit_invocation: false
