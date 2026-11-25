@@ -1,6 +1,6 @@
 Agent skills, written from scratch. Markdown, plus a few scripts and their tests.
 
-Tests are offline. Run the one for whatever you changed, and `python3 lint-skills.py` for any change under `skills/`. CI (`.github/workflows/test.yml`) runs the lint and every test on each push and pull request.
+Tests are offline. Run the one for whatever you changed, and `python3 lint-skills.py` for any change under `skills/`. CI (`.github/workflows/test.yml`) runs the lint and every test on each pull request and each push to `main`.
 
 - `bash install.test.sh` — `install.sh`
 - `bash lint-skills.test.sh` — `lint-skills.py`. Needs PyYAML (`pip install pyyaml`); only for working on this repo, since `install.sh` doesn't install it. It checks frontmatter, `agents/openai.yaml`, invocation set the same way in both, a README row per skill, the paths SKILL.md points at, and that every test sits where Layout says and is listed here. Its docstring lists each check. Description phrasing is checked only for the words "use when".

@@ -7,7 +7,7 @@ Frontmatter and agents/openai.yaml are read with PyYAML, so a value means
 what YAML says it means: quotes, comments, and continuation lines included.
 
 Per skill:
-  - SKILL.md opens with frontmatter that is a YAML mapping
+  - SKILL.md opens with frontmatter that is a YAML mapping, no key twice
   - name: matches the directory; lowercase words joined by hyphens, <= 64
   - description: a non-empty string, on the description: line itself,
     <= 1024 characters
@@ -17,14 +17,14 @@ Per skill:
   - agents/openai.yaml: interface.display_name and interface.short_description
     are non-empty strings; policy.allow_implicit_invocation is the boolean
     false for a user-invoked skill, and a model-invoked one has no policy
-  - a row in README.md's skill table
+  - a row in README.md's skill table: a line starting | [`name`](skills/name/SKILL.md) |
   - every ${CLAUDE_SKILL_DIR}/... path in SKILL.md exists
   - a non-empty scripts/ comes with tests/*.test.sh
   - SKILL.md past 500 lines: a warning only
 Repo-wide:
-  - README.md links no skill that doesn't exist
-  - every *.test.sh under skills/ sits in skills/<name>/tests/
-  - every *.test.sh is listed in CLAUDE.md
+  - README.md links no path under skills/ that doesn't exist
+  - every *.test.sh sits at the repo root or in skills/<name>/tests/, where
+    CI's glob finds it, and is listed in CLAUDE.md
 
 Prints one FAIL line per broken rule and exits 1 if there is any. WARN lines
 don't change the exit status. Exits 2 if PyYAML isn't installed.
@@ -45,7 +45,7 @@ MAX_DESCRIPTION = 1024
 NAME = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 USE_WHEN = re.compile(r"\buse when", re.IGNORECASE)
 SKILL_DIR_REF = re.compile(r"\$\{CLAUDE_SKILL_DIR\}/([^\s\"'`)]*)")
-README_LINK = re.compile(r"\]\((skills/[^)]*/SKILL\.md)\)")
+README_LINK = re.compile(r"\]\((skills/[^)#?]*)[^)]*\)")
 
 failures = []
 
@@ -84,13 +84,21 @@ def load(text, where):
     if not isinstance(data, dict):
         fail(f"{where}: must be a YAML mapping")
         return None, None
+    keys = [k.value for k, _ in node.value]
+    duplicates = sorted({k for k in keys if keys.count(k) > 1})
+    if duplicates:
+        for key in duplicates:
+            fail(f"{where}: {key}: appears twice")
+        return None, None
     return data, node
 
 
-def value_node(root, key):
+def pair(root, key):
+    """The (key node, value node) written for `key`, or None if it isn't
+    written out at the top level (a merge key, say)."""
     for k, v in root.value:
         if k.value == key:
-            return v
+            return k, v
     return None
 
 
@@ -125,8 +133,11 @@ def check_skill(readme, skill_dir):
         fail(f"{at}/SKILL.md: no description")
         description = ""
     else:
-        node = value_node(fm_root, "description")
-        if node.start_mark.line != node.end_mark.line or node.style in ("|", ">"):
+        written = pair(fm_root, "description")
+        key, node = written if written else (None, None)
+        if node is None or node.style in ("|", ">") or not (
+            key.start_mark.line == node.start_mark.line == node.end_mark.line
+        ):
             fail(f"{at}/SKILL.md: description must be on the description: line itself")
         if len(description) > MAX_DESCRIPTION:
             fail(f"{at}/SKILL.md: description is {len(description)} characters, the limit is {MAX_DESCRIPTION}")
@@ -161,7 +172,8 @@ def check_skill(readme, skill_dir):
             elif "policy" in agent:
                 fail(f"{at}: model-invoked in SKILL.md, so agents/openai.yaml has no policy block")
 
-    if f"[`{name}`](skills/{name}/SKILL.md)" not in readme:
+    row = f"| [`{name}`](skills/{name}/SKILL.md) |"
+    if not any(line.startswith(row) for line in readme.splitlines()):
         fail(f"{at}: no row in README.md's skill table")
 
     for ref in sorted({m.rstrip(".,;:?!") for m in SKILL_DIR_REF.findall(text)}):
@@ -193,15 +205,18 @@ def main():
         check_skill(readme, skill_dir)
 
     for link in README_LINK.findall(readme):
-        if not (root / link).is_file():
+        if not (root / link).exists():
             fail(f"README.md: links {link}, which doesn't exist")
 
-    tests = sorted(root.glob("*.test.sh")) + sorted(skills.rglob("*.test.sh"))
+    tests = sorted(
+        t for t in root.rglob("*.test.sh")
+        if not any(part.startswith(".") for part in t.relative_to(root).parts[:-1])
+    )
     for test in tests:
         rel = test.relative_to(root).as_posix()
-        parts = test.relative_to(skills).parts if test.is_relative_to(skills) else None
-        if parts is not None and (len(parts) != 3 or parts[1] != "tests"):
-            fail(f"{rel}: a skill's tests go in skills/<name>/tests/")
+        parts = test.relative_to(root).parts
+        if not (len(parts) == 1 or (len(parts) == 4 and parts[0] == "skills" and parts[2] == "tests")):
+            fail(f"{rel}: tests sit at the repo root or in skills/<name>/tests/, where CI runs them")
         if f"bash {rel}`" not in claude:
             fail(f"{rel}: not listed under the tests in CLAUDE.md")
 

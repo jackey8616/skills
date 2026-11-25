@@ -183,8 +183,34 @@ expect_fail "an empty single-quoted display_name" "no interface.display_name" \
   "sed -i.bak \"s/display_name: .*/display_name: ''/\" skills/alpha/agents/openai.yaml"
 expect_fail "openai.yaml that isn't valid YAML" "skills/alpha/agents/openai.yaml: not valid YAML" \
   "printf 'interface: [\n' > skills/alpha/agents/openai.yaml"
-expect_fail "a skill's test outside tests/" "skills/beta/other/x.test.sh: a skill's tests go in" \
+expect_fail "a skill's test outside tests/" "skills/beta/other/x.test.sh: tests sit at the repo root or in skills/<name>/tests/" \
   "mkdir skills/beta/other && touch skills/beta/other/x.test.sh && echo '- \`bash skills/beta/other/x.test.sh\`' >> CLAUDE.md"
+
+expect_fail "a description on the line after the key" "description must be on the description: line" \
+  "sed -i.bak 's/^description: .*/description:\n  Do the alpha thing./' skills/alpha/SKILL.md"
+expect_fail "a quoted description on the line after the key" "description must be on the description: line" \
+  "sed -i.bak 's/^description: .*/description:\n  \"Do the alpha thing.\"/' skills/alpha/SKILL.md"
+expect_fail "a duplicate key in the frontmatter" "frontmatter: description: appears twice" \
+  "sed -i.bak 's/^description: .*/description: Short.\ndescription: Do the alpha thing./' skills/alpha/SKILL.md"
+expect_fail "a description from a merge key" "description must be on the description: line" \
+  "sed -i.bak 's/^description: .*/d: \&d {description: Do the alpha thing.}\n<<: *d/' skills/alpha/SKILL.md"
+expect_fail "frontmatter that isn't a mapping" "frontmatter: must be a YAML mapping" \
+  "printf -- '---\n- a\n- b\n---\n' > skills/alpha/SKILL.md"
+expect_fail "a test outside the root and skills/<name>/tests/" "tools/x.test.sh: tests sit at the repo root or in skills/<name>/tests/" \
+  "mkdir tools && touch tools/x.test.sh && echo '- \`bash tools/x.test.sh\`' >> CLAUDE.md"
+expect_fail "a skill linked in prose but not in a table row" "skills/beta: no row in README.md" \
+  "sed -i.bak '/beta/d' README.md && echo 'See [\`beta\`](skills/beta/SKILL.md) in prose.' >> README.md"
+expect_fail "README links a skill directory that doesn't exist" "README.md: links skills/gone/" \
+  "echo '| [\`gone\`](skills/gone/) | Gone. |' >> README.md"
+expect_pass "a path followed by a comma, a colon, or a semicolon" \
+  "printf 'Run \${CLAUDE_SKILL_DIR}/scripts/run.sh, \${CLAUDE_SKILL_DIR}/scripts/run.sh: \${CLAUDE_SKILL_DIR}/scripts/run.sh;\n' >> skills/beta/SKILL.md"
+
+fake="$WORK/no-yaml"
+mkdir -p "$fake/yaml"
+echo 'raise ImportError("no yaml here")' > "$fake/yaml/__init__.py"
+rc=0; got="$(PYTHONPATH="$fake" python3 "$LINT" 2>&1)" || rc=$?
+[ "$rc" -eq 2 ] && [ "$got" = "PyYAML not found. Install it: pip install pyyaml" ] \
+  && ok "no PyYAML: exit 2 with the install command" || bad "no PyYAML" "exit $rc, output: $got"
 
 out="$(python3 "$LINT" 2>&1)" && ok "this repo passes" || bad "this repo passes" "$out"
 
