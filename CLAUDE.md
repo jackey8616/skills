@@ -1,8 +1,9 @@
 Agent skills, written from scratch. Markdown, plus a few scripts and their tests.
 
-Tests are offline. Run the one for whatever you changed:
+Tests are offline. Run the one for whatever you changed, and `bash lint-skills.sh` for any change under `skills/`. CI (`.github/workflows/test.yml`) runs the lint and every test on each push and pull request.
 
 - `bash install.test.sh` — `install.sh`
+- `bash lint-skills.test.sh` — `lint-skills.sh`, which checks the rules under Layout, Invocation, and Add, rename, remove a skill, and that every test is listed here
 - `bash skills/codex-review/tests/detect.test.sh` — `skills/codex-review/scripts/detect.sh`
 - `bash skills/setup-annotation-guard/tests/tidy.test.sh` — `skills/setup-annotation-guard/scripts/tidy.py`
 - `bash skills/setup-annotation-guard/tests/setup-annotation-guard.test.sh` — the ast-grep claims in `skills/setup-annotation-guard/SKILL.md`, and its `ledger.sh`, `remove.sh`, and `checks.sh`. Needs ast-grep on PATH or `AST_GREP=<path>`.
