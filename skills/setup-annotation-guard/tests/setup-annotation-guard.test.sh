@@ -501,7 +501,8 @@ printf '# ast-grep-ignore\n\n# hidden\n' > "$sup/vendor/a.py"
 git -C "$sup" add -A
 git -C "$sup" -c user.name=t -c user.email=t@t commit -qm base
 git -C "$sup" rev-parse HEAD > "$WORK/sp/base"
-out="$(cd "$sup" && zsh -c "$(skill_cmd ledger.sh "$WORK/sp")" 2>/dev/null | tail -1)"
+shell="$(command -v zsh || command -v bash)"
+out="$(cd "$sup" && "$shell" -c "$(skill_cmd ledger.sh "$WORK/sp")" 2>/dev/null | tail -1)"
 [ "$out" = "ledger exit 0" ] && [ "$(cat "$WORK/sp/suppressions.txt")" = "vendor/a.py:1:# ast-grep-ignore" ] \
   && [ ! -s "$WORK/sp/removed-comments.jsonl" ] \
   && ok "records the token's line in a path the rules ignore, where the scan records nothing" \
