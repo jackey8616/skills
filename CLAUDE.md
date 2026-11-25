@@ -3,13 +3,13 @@ Agent skills, written from scratch. Markdown, plus a few scripts and their tests
 Tests are offline. Run the one for whatever you changed:
 
 - `bash tests/install.test.sh` — `install.sh`
-- `bash tests/detect.test.sh` — `skills/codex-review/scripts/detect.sh`
-- `bash tests/tidy.test.sh` — `skills/setup-annotation-guard/scripts/tidy.py`
-- `bash tests/setup-annotation-guard.test.sh` — the ast-grep claims in `skills/setup-annotation-guard/SKILL.md`, and its `ledger.sh`, `remove.sh`, and `checks.sh`. Needs ast-grep on PATH or `AST_GREP=<path>`.
+- `bash skills/codex-review/tests/detect.test.sh` — `skills/codex-review/scripts/detect.sh`
+- `bash skills/setup-annotation-guard/tests/tidy.test.sh` — `skills/setup-annotation-guard/scripts/tidy.py`
+- `bash skills/setup-annotation-guard/tests/setup-annotation-guard.test.sh` — the ast-grep claims in `skills/setup-annotation-guard/SKILL.md`, and its `ledger.sh`, `remove.sh`, and `checks.sh`. Needs ast-grep on PATH or `AST_GREP=<path>`.
 
 ## Layout
 
-One skill per directory: `skills/<name>/SKILL.md`, with `skills/<name>/agents/openai.yaml` beside it for Codex. The yaml is never optional.
+One skill per directory: `skills/<name>/SKILL.md`, with `skills/<name>/agents/openai.yaml` beside it for Codex. The yaml is never optional. A skill's tests go in `skills/<name>/tests/`; `install.sh` leaves that directory out. `tests/` at the root is for `install.sh` alone.
 
 ## Invocation
 
