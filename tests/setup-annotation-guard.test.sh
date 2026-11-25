@@ -216,6 +216,7 @@ git -C "$jsx" add -A
 git -C "$jsx" -c user.name=t -c user.email=t@t commit -qm init
 rc=0; run_removal "$jsx" >/dev/null 2>"$WORK/tidy.err" || rc=$?
 [ "$rc" -eq 0 ] && ok "tidy.py exits 0" || bad "tidy.py exits 0" "exit $rc: $(cat "$WORK/tidy.err")"
+[ ! -s "$WORK/tidy.err" ] && ok "prints no ast-grep messages when nothing failed" || bad "quiet on success" "$(head -3 "$WORK/tidy.err")"
 got="$(cat "$jsx/a.tsx")"
 want="$(printf 'const o = {};\nfunction f() {}\nconst v = <div><span>{x}</span></div>;\nfunction g() { return 1; }\nconst s = `a  \n`;\nconst q = 1;')"
 [ "$got" = "$want" ] \
@@ -233,7 +234,8 @@ snapf="$(cat "$WORK/cuts/snap" 2>/dev/null)"
   && ok "records the snapshot sha in <scratchpad>/snap" || bad "snapshot recorded" "$snapf"
 printf 'id: no-comments-bad\nlanguage: Nope\nrule: { kind: comment }\n' > "$jsx/rules/no-comments-bad.yml"
 rc=0; run_removal "$jsx" >/dev/null 2>&1 || rc=$?
-[ "$rc" = 2 ] && ok "exits 2 when ast-grep fails" || bad "ast-grep failure" "exit $rc"
+err="$(run_removal "$jsx" 2>&1 >/dev/null)"
+[ "$rc" = 2 ] && echo "$err" | grep -q 'exited' && ok "exits 2 when ast-grep fails, and shows why" || bad "ast-grep failure" "exit $rc: $err"
 rm "$jsx/rules/no-comments-bad.yml"
 git -C "$jsx" checkout -q -- . && rm -f "$WORK/cuts/snap" && mkdir "$WORK/cuts/snap"
 before="$(git -C "$jsx" diff HEAD)"

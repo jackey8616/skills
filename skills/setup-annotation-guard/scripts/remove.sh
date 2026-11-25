@@ -15,8 +15,9 @@
 # files the removal changed. Then tidy.py on all the records, in order.
 #
 # Exits with tidy.py's status (3: lines to fix by hand), or 2 if a step
-# fails. ast-grep exiting 1 is expected: matches without a fix (docstrings)
-# remain.
+# fails. ast-grep exiting 1 is expected, since it reports every match as an
+# error, and matches without a fix (docstrings) remain after -U; its messages
+# are shown only when it fails.
 set -u
 shopt -s nullglob
 
@@ -24,9 +25,9 @@ dir="$(cd "$1" && pwd)" || exit 2
 here="$(cd "$(dirname "$0")" && pwd)"
 
 scan() {
-  ast-grep scan "$@"
-  local rc=$?
-  [ "$rc" -le 1 ] || { echo "ast-grep scan $* exited $rc" >&2; exit 2; }
+  local err rc
+  { err="$(ast-grep scan "$@" 2>&1 1>&3 3>&-)"; rc=$?; } 3>&1
+  [ "$rc" -le 1 ] || { printf '%s\n' "$err" >&2; echo "ast-grep scan $* exited $rc" >&2; exit 2; }
 }
 
 snap="$(git stash create)" || exit 2
