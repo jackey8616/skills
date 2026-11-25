@@ -22,7 +22,9 @@ made them: in `<pre>` every space and line is content, and telling from
 the text alone whether a cut is inside one isn't reliable. (CSS
 `white-space: pre` on another element can't be seen from the file.)
 
-Every other line is kept byte for byte, line ending included. A file whose
+Every other line is kept byte for byte, line ending included; a comment
+that took a CRLF line's \r with it gives the \r back. REV's text is taken
+as checkout writes it (eol, filters), the form the working tree is in. A file whose
 current text isn't exactly REV's with the recorded ranges removed is
 skipped and reported. Two kinds of line are named for fixing by hand, and
 the exit status is 3: one where a removal joined the code on either side
@@ -40,7 +42,7 @@ import sys
 from collections import defaultdict
 
 DROP = object()
-INLINE, BREAK, HTML = "inline", "break", "html"
+INLINE, BREAK, HTML, CR = "inline", "break", "html", "cr"
 LINE_TERMINATORS = "\n\r\u2028\u2029"
 PRE = re.compile(r"<pre\b", re.IGNORECASE)
 
@@ -94,10 +96,10 @@ def load(paths):
                     kind = None
                 elif match.get("language", "").lower() == "html":
                     kind = HTML
-                elif any(c in match["text"] for c in LINE_TERMINATORS):
+                elif any(c in match["text"].removesuffix("\r") for c in LINE_TERMINATORS):
                     kind = BREAK
                 else:
-                    kind = INLINE
+                    kind = CR if match["text"].endswith("\r") else INLINE
                 ranges[match["file"]].append((offsets["start"], offsets["end"], kind))
         passes.append(ranges)
     return passes
@@ -144,12 +146,15 @@ def tidy(new, points):
     for line in lines:
         end = start + len(line) - len(ending(line))
         here = sorted(p for p in at if start <= p <= end)
+        eol = ending(line)
+        if eol == "\n" and CR in at.get(end, ()):
+            eol = "\r\n"
         if not here:
             out.append(line)
         elif not line.strip():
             kept = [o for o in out if o is not DROP]
             if kept and kept[-1].rstrip("\r\n").endswith("\\"):
-                out.append(ending(line) or "\n")
+                out.append(eol or "\n")
             else:
                 out.append(DROP)
         else:
@@ -169,10 +174,10 @@ def tidy(new, points):
                 elif at[p] - {None} and fuses(body[i - 1], body[i]):
                     reason = "a removal joined the code on either side"
             if reason:
-                out.append(Named(body + ending(line)))
+                out.append(Named(body + eol))
                 out[-1].reason = reason
             else:
-                out.append(body + ending(line))
+                out.append(body + eol)
         start += len(line)
     return out
 
@@ -217,7 +222,7 @@ def main():
     changed, status = 0, 0
     for path in files:
         try:
-            old = git("show", f"{args.base}:{path}")
+            old = git("cat-file", "--filters", f"{args.base}:{path}")
             with open(path, "rb") as f:
                 current = f.read()
             expected, byte_points = apply(old, [ranges.get(path, []) for ranges in passes])

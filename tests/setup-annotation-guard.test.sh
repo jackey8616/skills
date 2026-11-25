@@ -251,6 +251,41 @@ if command -v zsh >/dev/null; then
   [ "$rc" = 0 ] && [ "$(cat "$jsx/z.tsx")" = "const z = 1;" ] && ok "runs the same from zsh" || bad "remove.sh from zsh" "exit $rc"
 fi
 
+cpp="$WORK/cpp"
+mkdir -p "$cpp/rules"
+git -C "$cpp" init -q
+printf 'ruleDirs: [rules]\n' > "$cpp/sgconfig.yml"
+printf 'id: no-comments-c\nlanguage: C\nseverity: error\nrule: { kind: comment }\nfix: ""\n' > "$cpp/rules/no-comments-c.yml"
+printf 'id: no-comments-c++\nlanguage: C++\nseverity: error\nrule: { kind: comment }\nfix: ""\n' > "$cpp/rules/no-comments-c++.yml"
+printf 'int a; // c\n' > "$cpp/a.c"
+printf 'int b; // cpp\n' > "$cpp/b.cpp"
+git -C "$cpp" add -A
+git -C "$cpp" -c user.name=t -c user.email=t@t commit -qm init
+rc=0; run_removal "$cpp" >/dev/null 2>&1 || rc=$?
+[ "$rc" = 0 ] && [ "$(cat "$cpp/a.c")" = "int a;" ] && [ "$(cat "$cpp/b.cpp")" = "int b;" ] \
+  && ok "a rule id with regex characters (no-comments-c++) selects only its own rule" || bad "c++ rule id" "exit $rc: $(cat "$cpp/b.cpp")"
+
+sub="$WORK/sub"
+mkdir -p "$sub/inner" "$sub/outer/rules"
+git -C "$sub/inner" init -q
+printf 'x = 1  # inner\n' > "$sub/inner/i.py"
+git -C "$sub/inner" add -A
+git -C "$sub/inner" -c user.name=t -c user.email=t@t commit -qm i
+git -C "$sub/outer" init -q
+printf 'ruleDirs: [rules]\n' > "$sub/outer/sgconfig.yml"
+printf 'id: no-comments-python\nlanguage: Python\nseverity: error\nrule: { kind: comment }\nfix: ""\n' > "$sub/outer/rules/no-comments-python.yml"
+printf 'y = 2  # outer\n' > "$sub/outer/o.py"
+git -C "$sub/outer" -c protocol.file.allow=always submodule -q add "$sub/inner" lib >/dev/null 2>&1
+git -C "$sub/outer" add -A
+git -C "$sub/outer" -c user.name=t -c user.email=t@t commit -qm o
+rc=0; err="$(run_removal "$sub/outer" 2>&1 >/dev/null)" || rc=$?
+[ "$rc" = 2 ] && echo "$err" | grep -q 'submodule lib' && [ -z "$(git -C "$sub/outer" status --porcelain)" ] \
+  && ok "stops, before removing anything, when a rule reaches a submodule" || bad "submodule reached" "exit $rc: $err"
+printf 'ignores: ["lib/**"]\n' >> "$sub/outer/rules/no-comments-python.yml"
+rc=0; run_removal "$sub/outer" >/dev/null 2>&1 || rc=$?
+[ "$rc" = 0 ] && [ "$(cat "$sub/outer/o.py")" = "y = 2" ] && [ "$(cat "$sub/outer/lib/i.py")" = "x = 1  # inner" ] \
+  && ok "with the submodule in ignores, removes only the repo's own comments" || bad "submodule ignored" "exit $rc: $(cat "$sub/outer/o.py"; cat "$sub/outer/lib/i.py")"
+
 echo "checks.sh"
 chk="$WORK/chk"
 mkdir -p "$chk"
@@ -405,6 +440,10 @@ ledger_out="$(cd "$led" && eval "$ledger_run" 2>/dev/null | tail -1)"
 [ "$ledger_out" != "ledger exit 0" ] && grep -q 'ast-grep-ignore' "$led/c.py" \
   && ok "ledger stops, real repo untouched, when the checkout fails" || bad "blocked checkout" "$ledger_out"
 rm "$WORK/ls/base-tree"
+git -C "$led" worktree add -q --detach "$WORK/ls/base-tree" HEAD
+ledger_out="$(cd "$led" && eval "$ledger_run" 2>/dev/null | tail -1)"
+[ "$ledger_out" = "ledger exit 0" ] && [ ! -e "$WORK/ls/base-tree" ] \
+  && ok "ledger clears the worktree an interrupted run left" || bad "leftover worktree" "$ledger_out"
 plain="$WORK/plain"
 mkdir -p "$plain/rules"
 git -C "$plain" init -q

@@ -80,6 +80,8 @@ The groups that recur with a fixed prefix are the candidate directives. Everythi
 
 Also find what must be skipped entirely: generated files (a `Code generated … DO NOT EDIT.` or `@generated` header), vendored code (`vendor/`, `third_party/`), anything a generator rewrites, and test inputs captured from outside: fixtures, snapshots (`__snapshots__/`, `*.snap`), saved HTML pages, recorded API responses (cassettes, `*.har`), golden files. Changing a captured input changes what the test checks; an HTML fixture's `<script>` is reached by the JavaScript rule and `-U` would rewrite it. All of these keep their comments and go in `ignores`.
 
+So does every submodule, each path `git ls-files -s` lists with mode `160000`: it's another repo, and the scans here would walk into its checkout. Its `<path>/**` goes in every rule's `ignores`, whatever languages it holds; leave its comments out of the counts. `remove.sh` stops before removing anything if a guard rule still reaches one.
+
 ## 2. Exceptions
 
 A comment is allowed only if a tool reads it, and only if that tool is configured in this repo: its config is checked in, or lint, CI, or the build runs it. No ruff or flake8 config → no `noqa`. Start from these, and keep only what the inventory found or the repo's tools need:

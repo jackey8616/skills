@@ -169,6 +169,15 @@ expect "keeps CRLF line endings" j.py \
 "$(printf 'x = 1\r\n# c\r\ny = 2\r\n')" \
 "$(printf 'x = 1\r\ny = 2\r\n')" '# c'
 
+expect "gives back the \\r a CRLF line's comment took" crk.py \
+"$(printf 'x = 1  # note\r\n# c\r\ny = 2\r\n')" \
+"$(printf 'x = 1\r\ny = 2\r\n')" "$(printf '# note\r')" "$(printf '# c\r')"
+
+printf 'crlf.py text eol=crlf\n' > "$WORK/.gitattributes"
+expect "reads the base as checkout writes it (eol=crlf)" crlf.py \
+"$(printf 'x = 1  # note\r\ny = 2\r\n')" \
+"$(printf 'x = 1\r\ny = 2\r\n')" "$(printf '# note\r')"
+
 expect "keeps trailing spaces that are string data" l.js \
 '// full line
 const s = /* remove */ `a···

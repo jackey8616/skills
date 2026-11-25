@@ -14,7 +14,7 @@
 # Every ast-grep-ignore in the checkout is broken first, so the comments it
 # hides are recorded too; its own row reads ast-grep_ignore. Each step runs
 # only if the one before it succeeded, and the worktree is removed either
-# way. Prints `ledger exit N` and exits N; anything but 0 is a failure.
+# way; one an interrupted run left behind is removed first. Prints `ledger exit N` and exits N; anything but 0 is a failure.
 set -u
 
 dir="$(cd "$1" && pwd)" || { echo "ledger exit 1"; exit 1; }
@@ -26,6 +26,8 @@ for f in suppressions.txt suppressed removed-comments.jsonl; do
   : > "$dir/$f" || { echo "ledger exit 1"; exit 1; }
 done
 
+git worktree remove --force "$tree" 2>/dev/null
+git worktree prune
 rc=0
 git worktree add -q --detach "$tree" "$base" || { echo "ledger exit 1"; exit 1; }
 (
