@@ -154,6 +154,19 @@ expect_fail "a test not listed in CLAUDE.md" "skills/beta/tests/run.test.sh: not
 expect_fail "a root test not listed in CLAUDE.md" "install.test.sh: not listed" \
   "touch install.test.sh"
 
+expect_pass "a path ending a question or an exclamation" \
+  "printf 'Did you run \${CLAUDE_SKILL_DIR}/scripts/run.sh?\nRun \${CLAUDE_SKILL_DIR}/scripts/run.sh!\n' >> skills/beta/SKILL.md"
+expect_pass "\"because when\" isn't \"Use when\"" \
+  "sed -i.bak 's/^description: .*/description: Rewrite it, because when it is shallow the work is too./' skills/alpha/SKILL.md"
+expect_pass "a 1024-character non-ASCII description" \
+  "sed -i.bak \"s/^description: .*/description: \$(printf '—%.0s' \$(seq 1024))/\" skills/alpha/SKILL.md"
+expect_fail "a 1025-character non-ASCII description" "description is 1025 characters" \
+  "sed -i.bak \"s/^description: .*/description: \$(printf '—%.0s' \$(seq 1025))/\" skills/alpha/SKILL.md"
+expect_pass "inline comments in openai.yaml" \
+  "sed -i.bak -e 's/^policy:/policy:  # note/' -e 's/allow_implicit_invocation: false/& # user-invoked/' -e 's/^interface:/interface: # ui/' skills/alpha/agents/openai.yaml"
+expect_fail "display_name outside interface:" "no interface.display_name" \
+  "printf 'interface:\n  short_description: \"Do it\"\npolicy:\n  allow_implicit_invocation: false\n  display_name: \"Alpha\"\n' > skills/alpha/agents/openai.yaml"
+
 out="$(bash "$LINT" 2>&1)" && ok "this repo passes" || bad "this repo passes" "$out"
 
 echo

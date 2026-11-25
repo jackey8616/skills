@@ -35,19 +35,25 @@ field() {
       print v; exit }'
 }
 
-# yaml_value <key> <file> — the value of the first `key:` line at any depth.
-yaml_value() {
-  sed -n "s/^[[:space:]]*$1:[[:space:]]*//p" "$2" | head -n1 |
-    sed -e 's/[[:space:]]*$//' -e 's/^"\(.*\)"$/\1/'
+# block_value <block> <key> <file> — the value of `key:` inside the top-level
+# `block:` mapping, and nowhere else. Double quotes and inline `# comments`
+# are stripped.
+block_value() {
+  awk -v block="$1" -v key="$2" '
+    /^[^ \t#]/ { inside = ($0 ~ "^" block ":[ \t]*(#.*)?$"); next }
+    inside && $0 ~ "^[ \t]+" key ":" {
+      v = $0; sub("^[ \t]+" key ":[ \t]*", "", v)
+      if (v ~ /^"/) { v = substr(v, 2); sub(/".*$/, "", v) }
+      else { sub(/[ \t]+#.*$/, "", v); sub(/[ \t]+$/, "", v) }
+      print v; exit }' "$3"
 }
 
-# policy_value <key> <file> — the value of `key:` inside the top-level
-# `policy:` block, and nowhere else.
-policy_value() {
-  awk -v key="$1" '/^[^ \t#]/ { inside = ($0 ~ /^policy:[ \t]*$/); next }
-       inside && index($0, key ":") && $0 ~ "^[ \t]+" key ":" {
-         v = $0; sub(/^[ \t]+[^:]+:[ \t]*/, "", v); sub(/[ \t]+$/, "", v); print v; exit }' "$2"
-}
+# chars — the number of characters on stdin, counted as UTF-8 code points
+# whatever the locale: every byte but a continuation byte starts one.
+chars() { LC_ALL=C tr -d '\200-\277' | wc -c | tr -d ' '; }
+
+# says_use_when — stdin holds the words "use when", in any case, starting a word.
+says_use_when() { grep -Eiq '(^|[^[:alnum:]])use when'; }
 
 [ -d "$ROOT/skills" ] || { echo "FAIL no skills/ directory in $ROOT"; exit 1; }
 
@@ -84,8 +90,9 @@ for dir in "$ROOT"/skills/*/; do
     "|"* | ">"*) fail "$at/SKILL.md: description must be on the description: line itself" ;;
     *) [ -z "$continued" ] || fail "$at/SKILL.md: description must be on the description: line itself, not run onto the next" ;;
   esac
-  if [ "${#description}" -gt "$MAX_DESCRIPTION" ]; then
-    fail "$at/SKILL.md: description is ${#description} characters, the limit is $MAX_DESCRIPTION"
+  length="$(printf '%s' "$description" | chars)"
+  if [ "$length" -gt "$MAX_DESCRIPTION" ]; then
+    fail "$at/SKILL.md: description is $length characters, the limit is $MAX_DESCRIPTION"
   fi
 
   dmi="$(printf '%s' "$fm" | field disable-model-invocation)"
@@ -99,10 +106,10 @@ for dir in "$ROOT"/skills/*/; do
   esac
 
   if [ "$user_invoked" -eq 1 ]; then
-    if printf '%s' "$description" | grep -iq 'use when'; then
+    if printf '%s' "$description" | says_use_when; then
       fail "$at/SKILL.md: user-invoked, so the description has no \"Use when\" trigger; one human-facing line"
     fi
-  elif ! printf '%s' "$description" | grep -iq 'use when'; then
+  elif ! printf '%s' "$description" | says_use_when; then
     fail "$at/SKILL.md: model-invoked, so the description needs \"Use when\" trigger phrasing (\"Use when the user…\")"
   fi
 
@@ -110,12 +117,12 @@ for dir in "$ROOT"/skills/*/; do
     fail "$at: no agents/openai.yaml"
   else
     grep -q '^interface:' "$yaml" || fail "$at/agents/openai.yaml: no interface: block"
-    [ -n "$(yaml_value display_name "$yaml")" ] ||
+    [ -n "$(block_value interface display_name "$yaml")" ] ||
       fail "$at/agents/openai.yaml: no interface.display_name"
-    [ -n "$(yaml_value short_description "$yaml")" ] ||
+    [ -n "$(block_value interface short_description "$yaml")" ] ||
       fail "$at/agents/openai.yaml: no interface.short_description"
 
-    implicit="$(policy_value allow_implicit_invocation "$yaml")"
+    implicit="$(block_value policy allow_implicit_invocation "$yaml")"
     has_policy=0
     grep -q '^policy:' "$yaml" && has_policy=1
     if [ "$user_invoked" -eq 1 ] && [ "$implicit" != false ]; then
@@ -131,7 +138,7 @@ for dir in "$ROOT"/skills/*/; do
 
   while IFS= read -r ref; do
     [ -e "$dir/$ref" ] || fail "$at/SKILL.md: points at \${CLAUDE_SKILL_DIR}/$ref, which doesn't exist"
-  done < <(grep -o '\${CLAUDE_SKILL_DIR}/[^"`'"'"' )]*' "$skill" | sed -e 's|^\${CLAUDE_SKILL_DIR}/||' -e 's/[.,;:]*$//' | sort -u)
+  done < <(grep -o '\${CLAUDE_SKILL_DIR}/[^"`'"'"' )]*' "$skill" | sed -e 's|^\${CLAUDE_SKILL_DIR}/||' -e 's/[.,;:?!]*$//' | sort -u)
 
   if [ -d "$dir/scripts" ] && [ -n "$(ls -A "$dir/scripts")" ] &&
      ! ls "$dir"/tests/*.test.sh >/dev/null 2>&1; then
