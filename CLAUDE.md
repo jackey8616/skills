@@ -1,8 +1,9 @@
 Agent skills, written from scratch. Markdown, plus a few scripts and their tests.
 
-Tests are offline. Run the one for whatever you changed:
+Tests are offline. Run the one for whatever you changed, and `python3 lint-skills.py` for any change under `skills/`. CI (`.github/workflows/test.yml`) runs the lint and every test on each pull request and each push to `main`.
 
 - `bash install.test.sh` — `install.sh`
+- `bash lint-skills.test.sh` — `lint-skills.py`. Needs PyYAML (`pip install pyyaml`); only for working on this repo, since `install.sh` doesn't install it. It checks frontmatter, `agents/openai.yaml`, invocation set the same way in both, a README row per skill, the paths SKILL.md points at, and that every test sits where Layout says and is listed here. Its docstring lists each check. Description phrasing is checked only for the words "use when".
 - `bash skills/codex-review/tests/detect.test.sh` — `skills/codex-review/scripts/detect.sh`
 - `bash skills/setup-annotation-guard/tests/tidy.test.sh` — `skills/setup-annotation-guard/scripts/tidy.py`
 - `bash skills/setup-annotation-guard/tests/setup-annotation-guard.test.sh` — the ast-grep claims in `skills/setup-annotation-guard/SKILL.md`, and its `ledger.sh`, `remove.sh`, and `checks.sh`. Needs ast-grep on PATH or `AST_GREP=<path>`.

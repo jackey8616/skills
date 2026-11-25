@@ -36,7 +36,7 @@ User-invoked — type the name to run it.
 
 | Skill | What it does |
 | ----- | ------------ |
-| [`test-first-code-review`](skills/test-first-code-review/SKILL.md) | Review a fix by running its tests first, then reading the code. Never touches the codebase. |
+| [`test-first-code-review`](skills/test-first-code-review/SKILL.md) | Review a change, fix or feature, by running its tests first, then reading the code. Never touches the codebase. |
 | [`codex-review`](skills/codex-review/SKILL.md) | Claude implements, Codex reviews with `test-first-code-review`, Claude fixes; up to ten rounds. Uses a Herdr reviewer tab when available. |
 | [`deepen`](skills/deepen/SKILL.md) | Rewrite a prompt into a deeper version of the task, not a bigger one. |
 | [`setup-annotation-guard`](skills/setup-annotation-guard/SKILL.md) | Ban code comments in a repo with an ast-grep rule that allows only tool directives, wire it into lint and CI, and remove the comments already there. |

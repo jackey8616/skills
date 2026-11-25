@@ -1,0 +1,43 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install ast-grep, PyYAML, and zsh
+        run: |
+          npm install -g @ast-grep/cli@0.39.5
+          pip install pyyaml==6.0.3
+          sudo apt-get update -q
+          sudo apt-get install -y -q zsh
+
+      - name: Lint skills
+        run: python3 lint-skills.py
+
+      - name: Run every test
+        run: |
+          rc=0
+          for t in *.test.sh skills/*/tests/*.test.sh; do
+            echo "::group::$t"
+            bash "$t" || { rc=1; echo "::error file=$t::$t failed"; }
+            echo "::endgroup::"
+          done
+          exit "$rc"
