@@ -24,6 +24,19 @@ curl -fsSL https://raw.githubusercontent.com/jackey8616/skills/main/install.sh |
 
 The installer only touches skills it installed, with one exception: a symlink at a skill's path (a hand-linked dev checkout) is replaced with a copy. A real directory of the same name that it didn't create is skipped, never overwritten.
 
+### Claude Code on the web
+
+A cloud session runs in a fresh container, so the skills are installed per container, not once. Put the installer in your cloud environment's setup script: in the cloud environment menu in the session's title bar, choose Edit, then Setup script. It runs before Claude starts in every new session on that environment, whatever the repository:
+
+```bash
+curl -fsSL -H 'Accept: application/vnd.github.raw' \
+  https://api.github.com/repos/jackey8616/skills/contents/install.sh | bash || true
+```
+
+It fetches the same `install.sh` through the GitHub API rather than `raw.githubusercontent.com`. With limited network access, the cloud proxy refuses `raw.githubusercontent.com`, while `api.github.com` and `codeload.github.com`, where the installer downloads from, get through. `|| true` is there because a failing setup script stops the session from starting. A failed install should cost you the skills, not the session. Pin a version as above, with `SKILLS_REF=<tag-or-commit>` before `bash`.
+
+Each new container installs `main` as it is then. To upgrade a session that's already running, run the command in it and start a new session. See [cloud environments](https://code.claude.com/docs/en/cloud-environments) for the setup script and network access.
+
 Test the installer (offline, throwaway `$HOME`):
 
 ```bash
