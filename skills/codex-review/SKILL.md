@@ -184,6 +184,7 @@ Different → Codex touched the codebase. Stop the loop. Show the user what chan
 2. Re-run the tests the report ran, so you know your fix holds before Codex looks again.
 3. Act on the verdict:
    - **Meets requirement** → fix any remaining misleading or incorrect findings in the working tree, mark them as not re-reviewed, and stop.
+   - **Meets requirement, fixes required** → fix each **fix** finding, then send the next round to confirm.
    - **Does not meet requirement** → send the next round.
    - **Cannot determine** → tests couldn't run. Stop and tell the user what's missing.
    - Every finding disputed, nothing fixed → stop and hand the dispute to the user.

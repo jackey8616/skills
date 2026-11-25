@@ -1,0 +1,2 @@
+--index-url https://pypi.acme.internal/simple
+acme-testkit==2.4.0
