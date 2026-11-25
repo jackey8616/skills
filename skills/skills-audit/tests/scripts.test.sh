@@ -39,6 +39,7 @@ git init -q -b main .
 echo hi > a.txt
 git add -A && git -c user.name=f -c user.email=f@f commit -qm base
 EOF
+printf 'echo "files: $(ls | tr "\\n" " ")"\necho made-by-check > check-was-here\nexit 3\n' > "$skill/tests/evals/repo-case/post-check.sh"
 mkdir -p "$skill/tests/evals/results"
 old="$WORK/old/widget"
 mkdir -p "$old"
@@ -89,6 +90,7 @@ echo "collect.py"
 run_dir="$(field repo-case with_skill run_dir)"
 echo "the reply" > "$run_dir/reply.md"
 echo new > "$project/left.txt"
+echo edited >> "$project/a.txt"
 cat > "$WORK/t.jsonl" <<'EOF'
 {"type":"user","message":{"role":"user","content":"go"}}
 {"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","input":{"command":"ls -la"}}]}}
@@ -99,9 +101,14 @@ not json
 EOF
 out="$(python3 "$SCRIPTS/collect.py" "$it" repo-case with_skill --tokens 1234 --ms 5600 --transcript "$WORK/t.jsonl" 2>&1)"; rc=$?
 d="$it/repo-case/with_skill"
-check "exits 0 and summarises" '[ "$rc" -eq 0 ] && [ "$out" = "repo-case/with_skill: reply found, HEAD unchanged, 2 tool calls" ]' "exit $rc: $out"
+check "exits 0 and summarises" '[ "$rc" -eq 0 ] && [ "$out" = "repo-case/with_skill: reply found, HEAD unchanged, post-check FAILED, 2 tool calls" ]' "exit $rc: $out"
+check "changes.diff shows an edited tracked file and an untracked one in full" \
+  'grep -q "^+edited$" "$d/outputs/changes.diff" && grep -q "^+++ b/left.txt$" "$d/outputs/changes.diff" && grep -q "^+new$" "$d/outputs/changes.diff"' "$(cat "$d/outputs/changes.diff" 2>&1)"
+check "post-check runs in a copy: its output and exit are recorded, the project is untouched" \
+  'grep -q "^Exit: 3$" "$d/outputs/post-check.md" && grep -q "files: a.txt left.txt" "$d/outputs/post-check.md" && [ ! -e "$project/check-was-here" ]' "$(cat "$d/outputs/post-check.md" 2>&1)"
 check "copies the reply" '[ "$(cat "$d/outputs/reply.md")" = "the reply" ]' "$(cat "$d/outputs/reply.md" 2>&1)"
 check "repo-state shows what the run left" 'grep -q "^?? left.txt$" "$d/outputs/repo-state.md" && grep -q "(unchanged)" "$d/outputs/repo-state.md"' "$(cat "$d/outputs/repo-state.md" 2>&1)"
+check "a case without post-check.sh records none" '[ "$(field plain-case with_skill post_check)" = None ]' "$(field plain-case with_skill post_check)"
 check "transcript lists tool calls in order, with results" \
   'grep -q "^## 1. Bash$" "$d/transcript.md" && grep -q "^ls -la$" "$d/transcript.md" && grep -q "^a.txt$" "$d/transcript.md" && grep -q "^## 2. Read$" "$d/transcript.md" && grep -q "^> Done.$" "$d/transcript.md"' "$(cat "$d/transcript.md" 2>&1)"
 check "timing.json from the notice" \
@@ -110,7 +117,7 @@ old_project="$(field repo-case old_skill project)"
 git -C "$old_project" -c user.name=x -c user.email=x@x commit -q --allow-empty -m oops
 out="$(python3 "$SCRIPTS/collect.py" "$it" repo-case old_skill --tokens 1 --ms 1 2>&1)"
 check "flags a moved HEAD, a missing reply, and no transcript" \
-  '[ "$out" = "repo-case/old_skill: reply MISSING, HEAD CHANGED, no transcript" ] && grep -q "(CHANGED)" "$it/repo-case/old_skill/outputs/repo-state.md"' "$out"
+  '[ "$out" = "repo-case/old_skill: reply MISSING, HEAD CHANGED, post-check FAILED, no transcript" ] && grep -q "(CHANGED)" "$it/repo-case/old_skill/outputs/repo-state.md"' "$out"
 out="$(python3 "$SCRIPTS/collect.py" "$it" plain-case with_skill --tokens 1 --ms 1 2>&1)"
 check "a project that isn't a repo gets project-state, not repo-state" \
   '[ "$out" = "plain-case/with_skill: reply MISSING, files unchanged, no transcript" ] && [ ! -e "$it/plain-case/with_skill/outputs/repo-state.md" ] && grep -q "^- Created: none$" "$it/plain-case/with_skill/outputs/project-state.md"' "$out"

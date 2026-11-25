@@ -1,0 +1,10 @@
+schema_version: "1.1"
+name: already-installed-stops
+expected_outcome: |
+  A no-comments-python rule is already in the repository, but nothing runs it,
+  it has no exceptions or ignores, and it covers Python alone. The skill runs
+  once per repository: it stops, says the guard is in place and that changes
+  to it are edits to its rule files, and reports, without changing anything,
+  what the existing guard lacks next to a full setup.
+context:
+  scaffold_script: place-files.sh

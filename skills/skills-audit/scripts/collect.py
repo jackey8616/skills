@@ -10,6 +10,11 @@ path the subagent tool gave when the run started. Writes, in
   outputs/repo-state.md   git's view of the project after the run, against the
                           HEAD it started from, if the project is a repo;
   outputs/project-state.md otherwise: the files created and deleted in it
+  outputs/changes.diff    for a repo, everything the run changed in it: the
+                          diff against HEAD, then each untracked file in full
+  outputs/post-check.md   if the case has a post-check.sh: its output and exit
+                          status, run in a copy of the project so the run's
+                          result is left as it was
   transcript.md           every tool call in order, results trimmed
   timing.json
 
@@ -19,7 +24,9 @@ Both end with what the run left in its temp directory: a file there means
 the run wrote one, which a skill that should only answer mustn't. Prints a one-line summary.
 """
 import json
+import shutil
 import subprocess
+import tempfile
 import sys
 from pathlib import Path
 
@@ -81,6 +88,30 @@ def temp_files(run):
     return "- Left in the temp directory: " + (", ".join(f"`{f}`" for f in left) or "nothing") + "\n"
 
 
+def changes(run):
+    project = run["project"]
+    diff = subprocess.run(["git", "-C", project, "diff", "HEAD"], capture_output=True, text=True).stdout
+    untracked = git(project, "ls-files", "--others", "--exclude-standard").splitlines()
+    for f in untracked:
+        r = subprocess.run(["git", "-C", project, "diff", "--no-index", "--", "/dev/null", f],
+                           capture_output=True, text=True)
+        diff += r.stdout
+    return diff or "(no changes)\n"
+
+
+def post_check(run):
+    with tempfile.TemporaryDirectory() as d:
+        copy = Path(d) / "project"
+        shutil.copytree(run["project"], copy, symlinks=True)
+        try:
+            r = subprocess.run(["bash", run["post_check"]], cwd=copy, capture_output=True, text=True, timeout=900)
+            out, code = r.stdout + r.stderr, r.returncode
+        except subprocess.TimeoutExpired as e:
+            out, code = (e.stdout or "") + "\n(timed out after 900s)", "timeout"
+    fence = "```"
+    return f"# Post-check, on a copy of the project\n\nExit: {code}\n\n{fence}\n{out.rstrip()}\n{fence}\n", code == 0
+
+
 def trim(text, n):
     text = text if isinstance(text, str) else json.dumps(text)
     return text if len(text) <= n else text[:n] + f"\n… [{len(text) - n} more chars]"
@@ -137,11 +168,17 @@ def main(argv):
     if run["start_head"]:
         text, unchanged = repo_state(run)
         (out / "repo-state.md").write_text(text + temp_files(run))
+        (out / "changes.diff").write_text(changes(run))
         summary.append("HEAD " + ("unchanged" if unchanged else "CHANGED"))
     else:
         text, unchanged = project_state(run)
         (out / "project-state.md").write_text(text + temp_files(run))
         summary.append("files " + ("unchanged" if unchanged else "CHANGED"))
+
+    if run.get("post_check"):
+        text, passed = post_check(run)
+        (out / "post-check.md").write_text(text)
+        summary.append("post-check " + ("passed" if passed else "FAILED"))
 
     if transcript_path and Path(transcript_path).is_file():
         text, steps = transcript(transcript_path)

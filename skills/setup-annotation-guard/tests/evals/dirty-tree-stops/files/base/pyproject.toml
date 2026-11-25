@@ -1,0 +1,7 @@
+[project]
+name = "notes"
+version = "0.1.0"
+
+# Ruff checks style; the line length matches the team's editor setting.
+[tool.ruff]
+line-length = 88

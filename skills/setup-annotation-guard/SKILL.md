@@ -8,14 +8,16 @@ disable-model-invocation: true
 
 Install a lint rule in the target repo that fails on any code comment that isn't a tool directive. The code is the documentation: intent goes in names, types, structure, and tests; the reason for a change goes in its commit message. Comments that narrate past decisions are what later agents copy and trust, so none get written.
 
-The target repo is the current working directory, unless a path was passed to this skill. Path passed (blank if none): $ARGUMENTS
+What the user passed (blank if nothing): $ARGUMENTS
+
+It can hold a path to the target repo, answers to the questions in Ask once (section 2), or both. The target is that path, or the current working directory when none was passed. Answers given here count as asked: use them as given, and in Ask once ask only what they leave open. Someone who already knows the questions shouldn't have to answer them twice.
 
 The guard is ast-grep, not this skill. Everything an agent is allowed to write lives in the rule files, where a change to it shows up in a diff and gets reviewed. This skill only sets the rule up.
 
 ## 0. Preconditions
 
 - The target is a git repo with a clean working tree. Dirty → stop and ask; the cleanup in section 5 must be its own diff.
-- The guard isn't installed yet. This skill runs once per repo. `no-comments-*` rules already present → stop, and tell the user the guard is in place; changes to it from here on are edits to its rule files, reviewed like any other diff.
+- The guard isn't installed yet. This skill runs once per repo. `no-comments-*` rules already present → stop, and tell the user the guard is in place; changes to it from here on are edits to its rule files, reviewed like any other diff. Before you stop, check it without changing anything, against what this skill would have set up: a rule for each language in the repo, exceptions for the directives its configured tools read, `ignores` for generated, vendored, and submodule paths, rule tests, the lint command with the `ast-grep-ignore` ban, and lint in CI. Report what's missing, with the evidence. A guard someone started and never finished looks installed; whether to finish it, by editing its rule files, is the user's call.
 - ast-grep runs as `ast-grep`. Never as `sg`: on Linux that name is the setgroups command.
 - The scripts in `${CLAUDE_SKILL_DIR}/scripts/` do every multi-step part of this skill. Run each exactly as shown: they run under bash whatever your shell is, and read and write their state in `<scratchpad>`, so no sha or variable has to be carried from one command to the next. They call `ast-grep` from PATH; with one installed in your scratchpad, start the command with `PATH="<scratchpad>/ast-grep/node_modules/.bin:$PATH"`.
 - The inventory needs ast-grep before the user picks how to pin it. Use the one on PATH. None → install one into your scratchpad, outside the repo (`npm install --prefix <scratchpad>/ast-grep @ast-grep/cli@<version>`), and say so in the reply. Prefer 0.39.5, the version this skill's tables were checked against.
@@ -116,7 +118,7 @@ Every `<slot>` above is a place prose could hide: `#!/usr/bin/env do-not-touch-t
 
 ### Ask once
 
-Batch these into one AskUserQuestion call, after the inventory and before writing rules. It takes four questions at most, and there are four here. Skip a question the inventory already answers: no unguarded comments, no unknown directives. Python docstrings and doc comments are one question, not two. Still more than four → don't ask about pinning; pin an exact version in CI only, at the version the inventory used, and say so in the reply.
+Batch these into one AskUserQuestion call, after the inventory and before writing rules. No way to ask (no question tool, a run nobody is watching) → stop here: put the questions in the reply, with the inventory's numbers, and write nothing to the repo. The defaults below are what to recommend, not answers: removing a repo's comments is hard to undo, and the choice is the user's. They can run this again with the answers in the arguments. It takes four questions at most, and there are four here. Skip a question the inventory already answers: no unguarded comments, no unknown directives. Python docstrings and doc comments are one question, not two. Still more than four → don't ask about pinning; pin an exact version in CI only, at the version the inventory used, and say so in the reply.
 
 - **Docstrings and doc comments.** Python docstrings are strings, not comments, so `kind: comment` misses them. JSDoc, rustdoc `///`, and Go doc comments are comments, and the rule removes them. Ban both by default. The cost: editors lose the hover text on those functions. Keep them only if the repo builds API docs from them (Sphinx, mkdocstrings, pdoc, TypeDoc, rustdoc config present) or the user wants the hover text; then add an exception for the doc-comment form, limited to the paths the user names.
 - **Unguarded comments.** Show the count by file type from section 1: unparseable files, and code embedded in strings. Ask whether to remove them once by hand or leave them. Nothing will keep them out later either way. Config files often hold the repo's most useful comments; say so if that's what you found.

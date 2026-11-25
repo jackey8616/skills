@@ -1,0 +1,7 @@
+id: no-comments-python
+language: Python
+severity: error
+message: Comments aren't allowed here. Say it in code.
+rule:
+  kind: comment
+fix: ''

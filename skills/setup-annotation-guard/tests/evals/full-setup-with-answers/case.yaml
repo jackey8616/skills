@@ -1,0 +1,12 @@
+schema_version: "1.1"
+name: full-setup-with-answers
+expected_outcome: |
+  The same repository, and the user answers the skill's questions up front, in
+  place of a path. The run treats the current directory as the target, uses
+  the answers instead of asking, and finishes the setup: rules for Python,
+  TypeScript, and YAML that allow only the shebang and the noqa, a lint target
+  that CI runs, the comments and docstrings gone with the directives kept,
+  vendor/ untouched, the tests passing as before, nothing committed, and a
+  reply in the skill's format.
+context:
+  scaffold_script: place-files.sh

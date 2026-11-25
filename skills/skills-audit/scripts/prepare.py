@@ -20,7 +20,8 @@ scratchpad). This writes:
 Configs: with_skill is <skill-dir> as it is now; old_skill, with --old, is
 that snapshot. Run and skill paths are random ids, so nothing a run can see
 names the case or what it expects. Each run's `executor_prompt` is the whole
-prompt for its subagent, to send as it is. Prints runs.json.
+prompt for its subagent, to send as it is. A case with a post-check.sh beside
+its case.yaml gets it recorded in run.json, for collect.py. Prints runs.json.
 """
 import json
 import re
@@ -135,6 +136,7 @@ def main(argv):
                 "arguments": arguments,
                 "start_head": head.stdout.strip() if head.returncode == 0 else None,
                 "start_files": files(project),
+                "post_check": str(case / "post-check.sh") if (case / "post-check.sh").is_file() else None,
             }
             run["executor_prompt"] = executor_prompt(run)
             (it / case.name / config).mkdir()
