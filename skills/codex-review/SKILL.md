@@ -155,7 +155,10 @@ codex exec -s workspace-write -c sandbox_workspace_write.network_access=true -c 
   -C "$PWD" -o <tmp>/codex-review-<n>.md - < <tmp>/codex-review-prompt-<n>.md
 ```
 
-The report is the contents of the `-o` file.
+In Claude Code, that's the Bash tool's `run_in_background`; you're told when it exits. Wait for the exit: don't poll the `-o` file or read it early, since Codex writes it only once it's done, and don't start a second `codex exec` while one is running.
+
+- Exit 0 and a non-empty `-o` file → the report is its contents.
+- Anything else → show the user the exit status and the tail of `codex exec`'s output, and stop. Don't resend the round.
 
 ## 5. The loop
 
