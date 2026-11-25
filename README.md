@@ -27,7 +27,7 @@ The installer only touches skills it installed, with one exception: a symlink at
 Test the installer (offline, throwaway `$HOME`):
 
 ```bash
-bash tests/install.test.sh
+bash install.test.sh
 ```
 
 ## Skills

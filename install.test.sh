@@ -3,10 +3,10 @@
 # tarballs, so the real download path runs. Each case installs into a
 # throwaway $HOME, piping the script through bash like `curl | bash`.
 #
-#   bash tests/install.test.sh
+#   bash install.test.sh
 set -uo pipefail
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+ROOT="$(cd "$(dirname "$0")" && pwd)"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
