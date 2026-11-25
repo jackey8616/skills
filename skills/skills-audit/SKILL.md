@@ -32,7 +32,7 @@ The repo's own skill lint, if it has one (`python3 lint-skills.py`, or what its 
 
 ## 3. Cases
 
-Cases live in `<skill>/tests/evals/<case>/`, one folder each, in the layout `claude plugin eval` reads. Beside them, `<skill>/tests/evals.test.sh` runs no model: it checks that each case loads and that its fixture is what the case says. A case whose fixture drifted grades the model on the wrong question.
+Cases live in `<skill>/tests/evals/<case>/`, one folder each, in the layout `claude plugin eval` reads. Beside them, `<skill>/tests/evals.test.sh` runs no model. It checks that each case loads, with `scripts/check-evals.py`, and that its fixture is what the case says. A case whose fixture drifted grades the model on the wrong question.
 
 - **None yet** → read `references/writing-cases.md`. List the skill's rules that decide an outcome, and propose one case per rule: the name, what the case sets up, and what a run that follows the skill does. Wait for the user's OK. Then write the cases, their fixtures, and `evals.test.sh`, and run it.
 - **Some exist** → run `evals.test.sh` first; failing → stop and report. Then match the skill's rules to cases. A rule no case reaches goes in the report under Coverage, with a proposed case.
@@ -49,22 +49,7 @@ python3 "${CLAUDE_SKILL_DIR}/scripts/prepare.py" <skill-dir> <base> <N> [--old <
 
 It builds each run's project with the case's scaffold, copies the skill without `tests/`, and writes `runs.json` in the iteration's directory, `<it>` from here on (`<base>/<name>-workspace/iteration-<N>`). Every path a run sees is a random id. A run that can tell it's an eval, or which case it is, or what the graders expect (all sitting in `tests/evals/`), behaves differently from a real user's run.
 
-Start every run in one turn, one background subagent each, with exactly this prompt and nothing more:
-
-```
-Execute this task:
-- Skill path: <skill_path> — read its SKILL.md and follow it.
-- Task: the user typed this in the project at <project>:
-
-  <prompt>
-
-  So `$ARGUMENTS` in the skill is: <arguments>
-  That directory is the project you're working in. Your shell doesn't start there, so cd into it (or use absolute paths) in each command.
-- Temp directory, for anything the skill lets you write outside the project: <tmp>
-- Save outputs to: <reply> — your final reply to the user, exactly as you would give it. Also return it as your final message.
-```
-
-`arguments` is null when the prompt doesn't invoke the skill by name: drop that line. Note each run's transcript path, which the subagent tool gives when it starts the run.
+Start every run in one turn, one background subagent each. Each run's prompt is its `executor_prompt` from `runs.json`: send it exactly as it is, with nothing added. It names the skill copy, the project, the user's prompt, what `$ARGUMENTS` holds, a temp directory, and where to save the reply, and nothing about the case. Note each run's transcript path, which the subagent tool gives when it starts the run.
 
 As each run finishes, collect it at once. The completion notice is the only place its token count and duration appear:
 
@@ -72,7 +57,7 @@ As each run finishes, collect it at once. The completion notice is the only plac
 python3 "${CLAUDE_SKILL_DIR}/scripts/collect.py" <it> <case> <config> --tokens <n> --ms <n> --transcript <path>
 ```
 
-Don't read transcripts yourself. They're long, and `collect.py` writes the trimmed `transcript.md` the graders need. `outputs/repo-state.md` comes from git, not from the run: it is the evidence for whether the run changed the project.
+Don't read transcripts yourself. They're long, and `collect.py` writes the trimmed `transcript.md` the graders need. `outputs/repo-state.md` (a project that's a git repo) or `outputs/project-state.md` (one that isn't) comes from the disk, not from the run: it is the evidence for whether the run changed the project.
 
 No subagent tool (Codex) → run the cases with section 8's command at the current model instead, one config per run, and say that the `old_skill` comparison isn't available.
 
@@ -83,7 +68,7 @@ One grader subagent per case, grading every config of that case, each on its own
 ```
 You are a grader. Read <sc>/agents/grader.md and follow it, once for each run below. Grade each on its own evidence; don't compare them.
 - expectations: the `assertions` in <it>/<case>/eval_metadata.json
-- runs: <it>/<case>/<config>/ for each config. For each run R: transcript_path R/transcript.md; outputs_dir R/outputs (reply.md is the final reply; repo-state.md, if present, is git's view of the project after the run and the primary evidence for any expectation about changes to it). Write R/grading.json with `text`, `passed`, `evidence` in `expectations`, a `summary`, and `eval_feedback` when you find a real gap.
+- runs: <it>/<case>/<config>/ for each config there (with_skill alone in iteration 1). For each run R: transcript_path R/transcript.md; outputs_dir R/outputs (reply.md is the final reply; repo-state.md or project-state.md is the project's state after the run, read from the disk, and the primary evidence for any expectation about changes to it). Write R/grading.json with `text`, `passed`, `evidence` in `expectations`, a `summary`, and `eval_feedback` when you find a real gap.
 Your final message: per run, PASS/FAIL per expectation, and any eval_feedback.
 ```
 

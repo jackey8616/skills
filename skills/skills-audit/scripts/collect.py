@@ -8,12 +8,13 @@ path the subagent tool gave when the run started. Writes, in
 
   outputs/reply.md        the run's final reply, from the reply path it was given
   outputs/repo-state.md   git's view of the project after the run, against the
-                          HEAD it started from; only if the project is a repo
+                          HEAD it started from, if the project is a repo;
+  outputs/project-state.md otherwise: the files created and deleted in it
   transcript.md           every tool call in order, results trimmed
   timing.json
 
-repo-state.md is the evidence for anything about changes to the project: it
-comes from git, not from what the run says it did. Prints a one-line summary.
+repo-state.md and project-state.md are the evidence for anything about
+changes to the project: they come from the disk, not from what the run says. Prints a one-line summary.
 """
 import json
 import subprocess
@@ -54,6 +55,22 @@ def repo_state(run):
         fence,
         "",
     ]), head == start
+
+
+def project_state(run):
+    project = Path(run["project"])
+    now = sorted(str(f.relative_to(project)) for f in project.rglob("*")
+                 if f.is_file() and ".git" not in f.relative_to(project).parts)
+    before = run.get("start_files") or []
+    created = [f for f in now if f not in before]
+    deleted = [f for f in before if f not in now]
+    lines = ["# Project state after the run", "",
+             f"- Files before: {len(before)}; after: {len(now)}",
+             "- Created: " + (", ".join(f"`{f}`" for f in created) or "none"),
+             "- Deleted: " + (", ".join(f"`{f}`" for f in deleted) or "none"),
+             "- Content changes in files that existed before aren't tracked; a project that isn't a git repo has no baseline for them.",
+             ""]
+    return "\n".join(lines), not created and not deleted
 
 
 def trim(text, n):
@@ -113,6 +130,10 @@ def main(argv):
         text, unchanged = repo_state(run)
         (out / "repo-state.md").write_text(text)
         summary.append("HEAD " + ("unchanged" if unchanged else "CHANGED"))
+    else:
+        text, unchanged = project_state(run)
+        (out / "project-state.md").write_text(text)
+        summary.append("files " + ("unchanged" if unchanged else "CHANGED"))
 
     if transcript_path and Path(transcript_path).is_file():
         text, steps = transcript(transcript_path)

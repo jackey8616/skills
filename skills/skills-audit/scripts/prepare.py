@@ -11,14 +11,16 @@ scratchpad). This writes:
     iteration-<N>/
       runs.json                        every run below, for building prompts
       <case>/eval_metadata.json        prompt and assertions, for the viewer
-      <case>/<config>/run.json         where that run works and its start HEAD
+      <case>/<config>/run.json         where that run works, its start state,
+                                       and the exact prompt to give it
   <base>/s/<id>/<skill>/               the skill a run reads, without tests/
   <base>/r/<id>/project/               the directory a run works in, built by
                                        the case's scaffold_script if it has one
 
 Configs: with_skill is <skill-dir> as it is now; old_skill, with --old, is
 that snapshot. Run and skill paths are random ids, so nothing a run can see
-names the case or what it expects. Prints runs.json.
+names the case or what it expects. Each run's `executor_prompt` is the whole
+prompt for its subagent, to send as it is. Prints runs.json.
 """
 import json
 import re
@@ -34,6 +36,31 @@ import yaml
 def front(path):
     m = re.match(r"---\n(.*?)\n---\n(.*)", path.read_text(), re.S)
     return (yaml.safe_load(m.group(1)) or {}, m.group(2).strip()) if m else ({}, path.read_text().strip())
+
+
+def files(project):
+    return sorted(str(f.relative_to(project)) for f in project.rglob("*")
+                  if f.is_file() and ".git" not in f.relative_to(project).parts)
+
+
+def executor_prompt(run):
+    lines = [
+        "Execute this task:",
+        f"- Skill path: {run['skill_path']} — read its SKILL.md and follow it.",
+        f"- Task: the user typed this in the project at {run['project']}:",
+        "",
+        *("  " + line if line else "" for line in run["prompt"].splitlines()),
+        "",
+    ]
+    if run["arguments"] is not None:
+        lines.append(f"  So `$ARGUMENTS` in the skill is: {run['arguments']}" if run["arguments"]
+                     else "  So `$ARGUMENTS` in the skill is empty.")
+    lines += [
+        "  That directory is the project you're working in. Your shell doesn't start there, so cd into it (or use absolute paths) in each command.",
+        f"- Temp directory, for anything the skill lets you write outside the project: {run['tmp']}",
+        f"- Save outputs to: {run['reply']} — your final reply to the user, exactly as you would give it. Also return it as your final message.",
+    ]
+    return "\n".join(lines)
 
 
 def copy_skill(src, dest):
@@ -107,7 +134,9 @@ def main(argv):
                 "prompt": prompt,
                 "arguments": arguments,
                 "start_head": head.stdout.strip() if head.returncode == 0 else None,
+                "start_files": files(project),
             }
+            run["executor_prompt"] = executor_prompt(run)
             (it / case.name / config).mkdir()
             (it / case.name / config / "run.json").write_text(json.dumps(run, indent=2) + "\n")
             runs.append(run)

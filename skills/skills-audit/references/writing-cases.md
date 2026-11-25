@@ -24,13 +24,19 @@ The run reads everything in the fixture, so put nothing in it you don't mean to 
 - No incidental mess: unsorted imports, a missing `.gitignore` for caches, a stray TODO. Runs report what they see.
 - Names that don't hint at the case. The run should meet the project as a user's.
 
+## Text-only skills
+
+A skill that works on its arguments alone, one that rewrites a prompt or drafts a message, needs no fixture. Leave the scaffold out of `case.yaml`, and the run gets an empty directory. `collect.py` lists what the run created in it, as `project-state.md`.
+
+Much of what such a skill makes is judged by taste: whether a rewrite is deeper, or a draft is better. Assert what can be checked: the shape of the reply, what it must not do (do the task it was asked to rewrite, add deliverables), and what each part is about. Leave the rest to the user, in the viewer, and say so in the report. An assertion that needs taste to grade gives a different verdict per grader.
+
 ## Prompts
 
 `prompt.md` holds what the user would type. For a user-invoked skill that's `/<name> <arguments>`. In `allowed_tools`, also allow tools the skill shouldn't use. A read-only skill tested without Edit can't show it leaves Edit alone.
 
 ## Assertions
 
-One checkable statement per grader file, about the result, not about where a workflow saves it. Before keeping one, ask:
+One checkable statement per grader file, about the result, not about where a workflow saves it. Every run reads the skill and saves its reply with tools, so "ran no commands" is false in every run. Say what else it must not do: "did nothing beyond reading the skill and saving its reply". Before keeping one, ask:
 
 - Would a run that did nothing pass it? "The project is unchanged" alone, yes. Pair it with what the run must have done.
 - Would a wrong answer that happened to land right pass it? A correct verdict for the wrong reason does. Also assert the reason.
@@ -42,7 +48,7 @@ The graders' `eval_feedback` after each iteration names the assertions that fail
 
 It runs no model, so it runs everywhere, CI included. Two parts:
 
-1. **Format**: every case folder loads. That means `prompt.md` has only known settings and a prompt that invokes the skill, `case.yaml` has `schema_version: "1.1"` quoted and a `name` matching its folder, the scaffold exists, and every grader has its header and a statement.
-2. **Premises**: build each case's fixture as a run would, and check that what the case claims about it is true. Which tests pass and which fail, on the base and on the change, what files appear, what a dependency import does. One check per claim, with a `case` branch per case name and a failure for a case with no branch.
+1. **Format**: every case folder loads. `scripts/check-evals.py <skill-dir>` checks it and prints `ok|<check>` or `bad|<check>|<why>` per line. Read those lines into the test's own pass and fail counts, as `skills/deepen/tests/evals.test.sh` does. In this repo, call it as `"$TESTS/../../skills-audit/scripts/check-evals.py"`.
+2. **Premises**: build each case's fixture as a run would, and check that what the case claims about it is true. Which tests pass and which fail, on the base and on the change, what files appear, what a dependency import does. One check per claim, with a `case` branch per case name and a failure for a case with no branch. A case with no fixture still has a premise: its prompt is the one the case is about, for example no arguments in the case about none.
 
 Then prove it can fail. In a copy, break one premise per case (make the new test exercise the fix, add an unknown setting, give the base the feature), and check that exactly that check fails. List the test in the repo's CLAUDE.md beside the others, which the repo's lint checks.
