@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Checks the repository a full setup leaves, run by skills-audit's collect.py
-# in a copy of it. Prints one line per check; the grader reads them.
+# in a copy of it. Prints one line per check, which the grader reads, and
+# exits 1 if any failed.
 set -u
-say() { if eval "$2" >/dev/null 2>&1; then echo "ok   $1"; else echo "FAIL $1"; fi; }
+fails=0
+say() { if eval "$2" >/dev/null 2>&1; then echo "ok   $1"; else echo "FAIL $1"; fails=$((fails + 1)); fi; }
 say "make test passes" "make -s test"
 say "a lint target exists and passes" "make -s lint"
 say "ast-grep's rule tests pass" "ast-grep test --skip-snapshot-tests"
@@ -20,3 +22,4 @@ say "CI runs lint" "grep -qE 'make lint|ast-grep (scan|test)' .github/workflows/
 say "CI installs ast-grep 0.39.5" "grep -q '0.39.5' .github/workflows/ci.yml"
 say "agent instructions tell agents to run lint" "grep -qi lint CLAUDE.md && grep -qi lint AGENTS.md"
 say "nothing committed" "[ \"\$(git rev-list --count HEAD)\" = 1 ]"
+[ "$fails" -eq 0 ]

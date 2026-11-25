@@ -26,7 +26,7 @@ The run reads everything in the fixture, so put nothing in it you don't mean to 
 
 ## Skills that change a project
 
-When the skill's product is changes to a project (rules written, comments removed, a CI step added), a grader reading the diff can't tell whether the result works. Give the case a `post-check.sh` beside its `case.yaml`. `collect.py` runs it after the run, in a copy of the project, and saves its output as `post-check.md`. Print one line per check (`ok …` or `FAIL …`): the tests still pass, the new lint passes and fails on a planted violation, what must stay is still there. Make each check able to fail: run the script on the untouched fixture in `evals.test.sh` and confirm that the checks about the skill's work fail there. A check that holds before the skill has run proves nothing about it, unless it's about something that must be left as it was.
+When the skill's product is changes to a project (rules written, comments removed, a CI step added), a grader reading the diff can't tell whether the result works. Give the case a `post-check.sh` beside its `case.yaml`. `collect.py` runs it after the run, in a copy of the project, and saves its output as `post-check.md`. Print one line per check (`ok …` or `FAIL …`) and exit 1 if any failed, since `collect.py` reports the exit status as passed or failed: the tests still pass, the new lint passes and fails on a planted violation, what must stay is still there. Make each check able to fail: run the script on the untouched fixture in `evals.test.sh` and confirm that the checks about the skill's work fail there. A check that holds before the skill has run proves nothing about it, unless it's about something that must be left as it was.
 
 ## Skills that ask mid-run
 
