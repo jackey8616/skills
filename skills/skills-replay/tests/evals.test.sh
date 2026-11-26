@@ -56,8 +56,11 @@ pr_premises() {
   local merge
   merge=$(git -C "$p" log --merges --format=%H -1)
   check "$c: PR #12 is a merge" '[ -n "$merge" ] && git -C "$p" log -1 --format=%s "$merge" | grep -q "pull request #12"' "$(git -C "$p" log --oneline)"
-  check "$c: its second parent brings test_minutes.py" '[ "$(git -C "$p" diff --name-only "$merge^1" "$merge^2" | sort | tr "\n" " ")" = "duration.py test_minutes.py " ]' "$(git -C "$p" diff --name-only "$merge^1" "$merge^2")"
-  check "$c: the test fails on the base" '! test_at "$p" "$merge" "$merge^1"' "passes"
+  local fork
+  fork=$(git -C "$p" merge-base "$merge^1" "$merge^2")
+  check "$c: main moved on after the branch left it" '[ "$fork" != "$(git -C "$p" rev-parse "$merge^1")" ] && [ "$(git -C "$p" log -1 --format=%s "$fork")" = "Parse durations" ]' "$(git -C "$p" log --oneline --graph)"
+  check "$c: the PR's diff is duration.py and test_minutes.py" '[ "$(git -C "$p" diff --name-only "$fork" "$merge^2" | sort | tr "\n" " ")" = "duration.py test_minutes.py " ]' "$(git -C "$p" diff --name-only "$fork" "$merge^2")"
+  check "$c: the test fails on the base" '! test_at "$p" "$merge" "$fork"' "passes"
   check "$c: the test passes on the head" 'test_at "$p" "$merge" "$merge^2"' "fails"
   check "$c: no remote to ask" '[ -z "$(git -C "$p" remote)" ]' "$(git -C "$p" remote)"
   check "$c: the tree is clean" '[ -z "$(git -C "$p" status --porcelain)" ]' "$(git -C "$p" status --porcelain)"
@@ -82,6 +85,7 @@ for case_dir in "$EVALS"/*/; do
       p="$(build "$c")" || { bad "$c: fixture builds" "scaffold failed"; continue; }
       pr_premises "$c" "$p"
       task="$p/.skills-replay/app-pr12/task.yaml"
+      check "$c: the task's base is where the branch left main" 'grep -q "^base: $(git -C "$p" merge-base HEAD^1^1 HEAD^1^2)$" "$task"' "$(grep ^base "$task")"
       check "$c: the task file is committed" '[ -f "$task" ] && git -C "$p" ls-files --error-unmatch "$task" >/dev/null 2>&1' "missing"
       check "$c: the task's skill repo exists" '[ -f "$WORK/$c/r/x/skills-src/skills/tdd-fix/SKILL.md" ]' "missing"
       if python3 "$REPLAY" run "$task" "$WORK/$c/dry" --model none --runs 0 >/dev/null 2>&1; then

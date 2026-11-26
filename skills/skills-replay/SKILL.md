@@ -19,14 +19,15 @@ disable-model-invocation: true
 
 ## 2. Task files
 
-Each PR needs `<repo>/.skills-replay/<repo>-pr<N>/task.yaml`. One exists → read it, and go to section 3. None → read `references/task-file.md` and write it. Most of it comes from git and `gh`. Four parts can't come from those alone, and each needs the user's OK before any run:
+Each PR needs `<repo>/.skills-replay/<repo>-pr<N>/task.yaml`. One exists → read it, and go to section 3. None → read `references/task-file.md` and write it. Most of it comes from git and `gh`. Five parts can't come from those alone, and each needs the user's OK before any run:
 
 - **prompt**: the user's exact words. Found in a session, the PR body, or from the user. Never written by you: a prompt you wrote measures your wording, not the user's task.
 - **plain_prompt**: the same request with no slash command, when the prompt starts with one. It states what the user wanted, not the skill's method. A plain prompt that spells out the skill's steps hands the plain arm the skill, and the comparison then shows nothing.
 - **hidden_tests** and **test_command**: the PR's own tests, and the command that runs them.
 - **rubric**: 3–6 things the change had to get right, from the PR's description and review comments.
+- **skills**: which skill the PR was made with, the user's clone of the skills repo, and its commit then. The PR rarely says, so ask unless the session does.
 
-Show the four together, per PR, with where each came from. A PR whose session took several user turns: ask whether to fold the turns into one prompt or drop the PR. A replay of the first message alone grades the model on a task the user never gave it.
+Show the five together, per PR, with where each came from. A PR whose session took several user turns: ask whether to fold the turns into one prompt or drop the PR. A replay of the first message alone grades the model on a task the user never gave it.
 
 Writing in the user's repo is theirs to commit. Say where the files are and leave the commit to their word.
 

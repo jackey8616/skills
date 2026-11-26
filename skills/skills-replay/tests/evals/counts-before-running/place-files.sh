@@ -46,6 +46,8 @@ if __name__ == "__main__":
 PY
 git add -A && commit "Count minutes as 60 seconds"
 git checkout -q main
+printf "# duration\n\nparse_duration turns \"1h30m\" into seconds.\n" > README.md
+git add -A && commit "Add a README"
 git -c user.name="Dana Wu" -c user.email=dana@example.com merge -q --no-ff fix-minutes -m "Merge pull request #12 from dana/fix-minutes" -m "Parse minutes in durations"
 git branch -q -D fix-minutes
 skills="$(cd .. && pwd)/skills-src"
@@ -59,7 +61,7 @@ cat > .skills-replay/app-pr12/task.yaml <<YAML
 id: app-pr12
 pr: 12
 merged_at: 2026-10-02
-base: $(git rev-parse HEAD^1)
+base: $(git merge-base HEAD^1 HEAD^2)
 head: $(git rev-parse HEAD^2)
 prompt: |
   /tdd-fix parse_duration("1h30m") returns 3630, it should be 5400

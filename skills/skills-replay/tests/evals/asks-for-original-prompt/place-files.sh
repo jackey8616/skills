@@ -46,5 +46,7 @@ if __name__ == "__main__":
 PY
 git add -A && commit "Count minutes as 60 seconds"
 git checkout -q main
+printf "# duration\n\nparse_duration turns \"1h30m\" into seconds.\n" > README.md
+git add -A && commit "Add a README"
 git -c user.name="Dana Wu" -c user.email=dana@example.com merge -q --no-ff fix-minutes -m "Merge pull request #12 from dana/fix-minutes" -m "Parse minutes in durations"
 git branch -q -D fix-minutes
