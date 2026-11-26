@@ -7,6 +7,7 @@ Tests are offline. Run the one for whatever you changed, and `python3 lint-skill
 - `bash skills/codex-review/tests/detect.test.sh` — `skills/codex-review/scripts/detect.sh`
 - `bash skills/deepen/tests/evals.test.sh` — the cases in `skills/deepen/tests/evals/`: that each loads, and that its prompt fits its case
 - `bash skills/skills-audit/tests/scripts.test.sh` — `skills/skills-audit/scripts/prepare.py`, `collect.py`, `check-evals.py`, and `find-skill-creator.sh`
+- `bash skills/skills-replay/tests/scripts.test.sh` — `skills/skills-replay/scripts/replay.py`, with a fake `claude` and a made-up repo and PR
 - `bash skills/test-first-code-review/tests/evals.test.sh` — the cases in `skills/test-first-code-review/tests/evals/`: that each loads, and that its fixture's tests pass and fail where the case says
 - `bash skills/setup-annotation-guard/tests/tidy.test.sh` — `skills/setup-annotation-guard/scripts/tidy.py`
 - `bash skills/setup-annotation-guard/tests/evals.test.sh` — the cases in `skills/setup-annotation-guard/tests/evals/`: that each loads, and that its fixture holds the comments, directives, and state its graders count on. Needs ast-grep, as below.
@@ -23,6 +24,8 @@ claude plugin eval skills/<name> --eval-dir tests/evals --scaffold --allow-tools
 ```
 
 To write a skill's evals, run them, and improve or benchmark it, use `/skills-audit <name>`.
+
+To see whether a skill still pays on real work as models change, replay PRs made with it with `/skills-replay`. Its task files and results live in the replayed repo, under `.skills-replay/`, not here.
 
 ## Invocation
 

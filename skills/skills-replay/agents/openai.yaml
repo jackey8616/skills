@@ -1,0 +1,5 @@
+interface:
+  display_name: "Skills Replay"
+  short_description: "Replay merged PRs on a new model, with and without skills"
+policy:
+  allow_implicit_invocation: false
