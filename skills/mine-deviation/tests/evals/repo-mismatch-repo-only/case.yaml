@@ -1,0 +1,8 @@
+schema_version: "1.1"
+name: repo-mismatch-repo-only
+expected_outcome: |
+  app/ runs its tests with make check and its README says so; it has no test
+  target. The run finds that, routes the issue to app/'s repo as a repo
+  mismatch, and says why in the route line.
+context:
+  scaffold_script: place-files.sh

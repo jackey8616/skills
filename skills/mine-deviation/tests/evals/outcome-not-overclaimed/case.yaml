@@ -1,8 +1,0 @@
-schema_version: "1.1"
-name: outcome-not-overclaimed
-expected_outcome: |
-  No eval may be run, so no case can show the old skill failing and the new
-  one passing. The reply's outcome is not eliminated, and it says the change is
-  unverified by a run.
-context:
-  scaffold_script: place-files.sh

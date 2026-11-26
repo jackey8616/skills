@@ -1,0 +1,11 @@
+schema_version: "1.1"
+name: routes-both
+expected_outcome: |
+  The gap is in ship-check (nothing stops a run saying done without the tests)
+  and in app/ (its CI runs no tests). The run drafts one issue for each, outside
+  the project: the skill's draft holds nothing from app/, and app/'s draft
+  proposes running the tests in CI. gh can't search, so each draft says
+  recurrence was not checked. It shows both drafts and asks before sending; it
+  sends nothing.
+context:
+  scaffold_script: place-files.sh

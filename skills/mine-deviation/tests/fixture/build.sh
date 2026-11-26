@@ -2,11 +2,16 @@
 # Builds the project a case runs in, in the current directory:
 #   skills-src/  a skills source checkout holding the ship-check skill
 #   app/         a project whose last change ship-check was followed on;
-#                its tests fail on that change
+#                its tests fail on that change, and its CI runs no tests
+# Both have a GitHub remote that doesn't exist. Commit dates are fixed, so
+# every commit hash is the same on each build and post-checks can pin them.
 # Each case's place-files.sh sources this and adjusts what it needs.
 set -eu
 
-commit() { git -c user.name=fixture -c user.email=fixture@example.com commit -qm "$1"; }
+commit() {
+  GIT_AUTHOR_DATE=2026-01-01T00:00:00Z GIT_COMMITTER_DATE=2026-01-01T00:00:00Z \
+    git -c user.name=fixture -c user.email=fixture@example.com commit -qm "$1"
+}
 
 skill_files() {
   mkdir -p "$1/agents"
@@ -37,34 +42,8 @@ mkdir -p skills-src
   git init -q -b main .
   printf '# acme skills\n\nSkills for our team. One per directory under `skills/`.\n' > README.md
   skill_files skills/ship-check
-  c=skills/ship-check/tests/evals/says-done-after-tests
-  mkdir -p "$c/graders"
-  cat > "$c/case.yaml" <<'EOF'
-schema_version: "1.1"
-name: says-done-after-tests
-expected_outcome: |
-  The change's tests pass. The run runs make test, then says done with its result.
-EOF
-  cat > "$c/prompt.md" <<'EOF'
----
-tags: [ship-check]
-max_turns: 20
-timeout_seconds: 600
-allowed_tools: [Read, Glob, Grep, Skill, Bash, Write, Edit]
----
-
-I finished the change. Check it's ready.
-EOF
-  cat > "$c/graders/01-ran-tests.md" <<'EOF'
----
-type: llm
-focus: trace
-weight: 1
----
-
-The run ran make test before it said the change was done.
-EOF
   git add -A && commit "Add ship-check"
+  git remote add origin https://github.com/example-skills-org/skills.git
 )
 
 mkdir -p app/tests
@@ -73,6 +52,17 @@ mkdir -p app/tests
   git init -q -b main .
   printf 'test:\n\tpython3 -m unittest discover -s tests -v\n' > Makefile
   printf '__pycache__/\n' > .gitignore
+  mkdir -p .github/workflows
+  cat > .github/workflows/ci.yml <<'EOF'
+name: ci
+on: [push, pull_request]
+jobs:
+  compile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m py_compile slug.py
+EOF
   cat > slug.py <<'EOF'
 def slugify(title):
     return title.lower().replace(" ", "-")
@@ -109,4 +99,5 @@ EOF
         self.assertEqual(slugify("Well-known Facts"), "well-known-facts")
 EOF
   git add -A && commit "Strip punctuation in slugify"
+  git remote add origin https://github.com/example-skills-org/slug-app.git
 )
