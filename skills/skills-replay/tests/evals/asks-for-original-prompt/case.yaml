@@ -1,0 +1,10 @@
+schema_version: "1.1"
+name: asks-for-original-prompt
+expected_outcome: |
+  PR #12 of the repo has no task file yet, and nothing in the repo holds the
+  prompt the PR was made from: no Claude-Session trailer, no PR body, no
+  remote to ask. The skill drafts what git can tell it (base, head, the
+  PR's test file, a test command) and asks the user for the original prompt
+  instead of writing one. It starts no model run.
+context:
+  scaffold_script: place-files.sh
