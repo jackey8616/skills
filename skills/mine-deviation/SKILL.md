@@ -53,7 +53,7 @@ Say which route you took and why, in a line, in each issue.
 
 ## 4. Find the trackers
 
-- **The skill's source**: an installed skill has a manifest in its parent directory (`.jackey8616-skills` for this repo's skills) naming `owner/repo @ ref`. A skill read from a checkout of its source → that checkout's `git remote get-url origin`. Neither → the skill has no source you can name. Say so, and if the route is the skill alone, stop after the reply with the four lines and the cause.
+- **The skill's source**: an installed skill has a manifest in its parent directory (`.jackey8616-skills` for this repo's skills) naming `owner/repo @ ref`. A skill read from a checkout of its source → that checkout's `git remote get-url origin`. Neither → the skill has no source you can name. Say so in the reply, with the skill side of the issue there, and write no draft for it: a draft with no tracker to go to sits in a scratchpad and gets lost, while the reply is read. If the route is the skill alone, stop after the reply with the four lines and the cause.
 - **The repo**: `git remote get-url origin` in the repo the skill ran in. No remote, or one that isn't on GitHub → no tracker you can reach; draft only.
 - **Recurrence**: search each reachable tracker's open issues for the same deviation (`gh issue list -R <owner>/<repo> --search "<skill name> <step words>"`). Found → this is a recurrence: draft a comment on that issue, not a new one. It says the earlier fix, if any, didn't hold. Couldn't search (no `gh`, not logged in, no network) → the draft says "recurrence: not checked", never "none".
 
@@ -77,11 +77,13 @@ One file per issue, in your scratchpad, never in a repo. If the tracker's repo h
 - Related: <link to the other route's issue, once it exists>
 ```
 
+Until the other issue is filed, **Related** is a placeholder that says which issue it will be (the skill's, or the repo's); section 6 fills in the link.
+
 **Private detail.** The skill's source is read by everyone who uses the skill: its issue holds nothing from this repo. No code, paths, hostnames, project or company names, or transcript beyond the skill's own step; describe the situation in general terms. The repo's issue goes to the repo's own maintainers, so its paths and commands may stay. If the repo is public, nothing private goes in it either.
 
 ## 6. Show, then send
 
-Show the user each draft in full, and ask whether to send it. Nothing leaves this session without their yes.
+Paste each draft in full in your reply, not just its path, and ask whether to send it. The user decides on what they can read where they are; a path they'd have to open is a draft they may approve unread. Nothing leaves this session without their yes.
 
 - **Yes** → for the route that has no issue yet, `gh issue create -R <owner>/<repo> --title "<title>" --body-file <draft>`. Two routes → send one first, then put its link under **Related** in the other before sending it, and edit the first to link back (`gh issue edit <n> -R <owner>/<repo> --body-file <updated draft>`). A recurrence → `gh issue comment <n> -R <owner>/<repo> --body-file <draft>`.
 - **No**, or it can't be sent → leave the drafts where they are and say where.

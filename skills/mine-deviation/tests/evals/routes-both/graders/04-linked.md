@@ -4,4 +4,4 @@ focus: trace
 weight: 1
 ---
 
-Each draft has a line pointing to the other issue that names the other issue's repository (example-skills-org/slug-app in the skill's draft, example-skills-org/skills in app/'s draft, or the like).
+Each draft has a Related line (or the like) pointing to the other route's issue. Before anything is sent this may be a placeholder, as long as it says which issue it means (the skill's issue, or the repo's issue).
