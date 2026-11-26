@@ -1,8 +1,0 @@
-schema_version: "1.1"
-name: repairs-task-first
-expected_outcome: |
-  The run redoes the skipped step first: it runs make test in app/ before it
-  writes any draft, and the reply opens by saying the punctuation change is not
-  done because test_keeps_hyphens fails. It edits neither app/ nor the skill.
-context:
-  scaffold_script: place-files.sh

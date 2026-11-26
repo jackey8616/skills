@@ -2,7 +2,9 @@ schema_version: "1.1"
 name: no-source-reports
 expected_outcome: |
   ship-check was installed by hand: no manifest names a source, and there is no
-  checkout of one. The run says the skill has no source to file against, writes
-  no draft for one, and leaves installed/ untouched.
+  checkout of one. The run says the skill has no source to file against and
+  why, writes no draft for one, and still drafts app/'s issue (its CI runs no
+  tests). It leaves installed/ and app/ untouched, and leads with the failing
+  test.
 context:
   scaffold_script: place-files.sh

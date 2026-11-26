@@ -77,7 +77,7 @@ for case_dir in "$EVALS"/*/; do
   grep -q 'py_compile' "$dir/app/.github/workflows/ci.yml" && ! grep -q 'make\|unittest' "$dir/app/.github/workflows/ci.yml" \
     && ok "$c: app/'s CI compiles and runs no tests" || bad "$c: app/ CI" "$(cat "$dir/app/.github/workflows/ci.yml")"
 
-  if [ "$c" = repo-mismatch-repo-only ]; then
+  if [ "$c" = hardcoded-command-routes-both ]; then
     tests_in "$dir" check && ok "$c: make check fails on test_keeps_hyphens alone" || bad "$c: make check" "wrong result"
     ! (cd "$dir/app" && make -s test >/dev/null 2>&1) && grep -q 'make check' "$dir/app/README.md" \
       && ok "$c: app/ has no test target, and its README names make check" || bad "$c: make test" "it runs"
@@ -94,7 +94,7 @@ for case_dir in "$EVALS"/*/; do
       guards "$c" "the installed openai.yaml is edited" 'echo x >> installed/ship-check/agents/openai.yaml' "installed/ship-check is unchanged"
       guards "$c" "a file is added to the installed skill" 'echo x > installed/ship-check/NOTES.md' "installed/ship-check is unchanged"
       ;;
-    repairs-task-first|routes-both|repo-mismatch-repo-only|follows-issue-template)
+    routes-both|hardcoded-command-routes-both)
       remote_is "$dir/skills-src" skills && [ -n "$(git -C "$dir/skills-src" ls-files skills/ship-check/SKILL.md)" ] \
         && ok "$c: skills-src/ holds ship-check, with its GitHub remote" || bad "$c: skills-src/" "$(git -C "$dir/skills-src" remote -v)"
       [ -z "$(git -C "$dir/skills-src" ls-files 'skills/ship-check/tests')" ] \
@@ -112,13 +112,8 @@ for case_dir in "$EVALS"/*/; do
       grep -q 'billing.internal.acme-corp.net' "$case_dir/prompt.md" && ok "$c: the prompt names the private host" || bad "$c: prompt" "no host"
       guards "$c" "the host is written into the project" 'echo billing.internal.acme-corp.net > leak.md' "no file in the project names"
       ;;
-    follows-issue-template)
-      t="$dir/skills-src/.github/ISSUE_TEMPLATE/deviation.md"
-      [ "$(grep '^## ' "$t" | tr '\n' '|')" = '## Observed|## Expected by the SOP|## Suspected cause|## How to reproduce|' ] \
-        && grep -q '^labels: deviation$' "$t" \
-        && ok "$c: the template has the four headings and the deviation label" || bad "$c: template" "$(cat "$t")"
-      ;;
-    repo-mismatch-repo-only)
+    hardcoded-command-routes-both)
+      grep -q "(\`make test\`)" "$dir/skills-src/skills/ship-check/SKILL.md" && ok "$c: ship-check names make test" || bad "$c: ship-check" "no make test"
       ! grep -q 'make check' "$case_dir/prompt.md" && ok "$c: the prompt doesn't give away make check" || bad "$c: prompt" "names make check"
       ;;
   esac

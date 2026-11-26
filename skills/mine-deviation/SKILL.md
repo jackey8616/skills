@@ -45,7 +45,9 @@ Where a fix belongs decides where the issue goes. Ask two questions:
 - **Would this happen in another repo too?** Then the skill's SOP is where it belongs: an issue for the **skill's source**.
 - **Could this repo catch it with its own tools, whatever skill or harness ran?** A CI job, a lint rule, a pre-commit hook, branch protection: a check there holds even when no skill loads. Or is it a repo mismatch, true only here? Then the **repo** is where it belongs: an issue for the repo the skill ran in.
 
-Both can hold. A run that said done without running the tests is a gap in the skill, and also a repo whose CI doesn't run its tests. Then write one issue for each, each linking the other. A repo mismatch goes to the repo alone: don't bend a skill's SOP to one repo's quirk.
+Both can hold. A run that said done without running the tests is a gap in the skill, and also a repo whose CI doesn't run its tests. Then write one issue for each, each linking the other.
+
+A repo mismatch goes to the repo alone when the skill is right in general and this repo is the odd one out: don't bend a skill's SOP to one repo's quirk. But when the skill hard-codes what repos do differently (a command, a path, a layout), the skill assumed too much: the next repo that differs hits the same wall, so the skill gets an issue too.
 
 Say which route you took and why, in a line, in each issue.
 

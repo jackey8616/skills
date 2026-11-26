@@ -6,6 +6,6 @@ expected_outcome: |
   the project: the skill's draft holds nothing from app/, and app/'s draft
   proposes running the tests in CI. gh can't search, so each draft says
   recurrence was not checked. It shows both drafts and asks before sending; it
-  sends nothing.
+  sends nothing. The reply opens with the failing test.
 context:
   scaffold_script: place-files.sh
