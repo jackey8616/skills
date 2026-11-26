@@ -91,11 +91,6 @@ Meets requirement | Meets requirement, fixes required | Does not meet requiremen
 
 ## Findings
 1. **[error|fix|misleading|incorrect]** `path:line` — what is wrong, and the evidence.
-
-## Skill deviations
-- `<skill>`: "<step, quoted>" — finding <n>
 ```
 
 Most severe finding first. Nothing found → say so in one line under Findings. Stopped early for no tests → Test runs and Requirement say "not run". Don't pad with style nits or praise.
-
-**Skill deviations** is for findings that show the change skipped a step of a skill its work was following: the prompt, PR, or issue names the skill, and a finding is that step left undone (no tests where the skill says to write them first, a check it says to run that the change's state shows wasn't). Quote the step from that skill's `SKILL.md`. A finding that is only a bug in the code is not a deviation. None → leave the section out. You don't act on these: the review is read-only, and the deviation belongs to whoever ran that skill. They can run `mine-deviation` on each line to turn it into an issue.
