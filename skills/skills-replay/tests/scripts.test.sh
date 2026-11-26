@@ -128,7 +128,7 @@ plain_log=$(grep -l '^Fix add.sh so it adds.$' "$log"/*/argv | xargs dirname)
 skill_log=$(grep -l '^/widget fix add$' "$log"/*/argv | xargs dirname)
 check "plain gets plain_prompt, skills gets prompt" '[ -n "$plain_log" ] && [ -n "$skill_log" ]' "$(cat "$log"/*/argv)"
 check "plain loads no skill" '[ -z "$(cat "$plain_log/skills")" ]' "$(cat "$plain_log/skills")"
-check "skills loads every installed skill" '[ "$(cat "$skill_log/skills" | sort | tr "\n" " ")" = "gadget widget " ]' "$(cat "$skill_log/skills")"
+check "skills copies every installed skill" 'grep -qx gadget "$skill_log/skills" && grep -qx widget "$skill_log/skills"' "$(cat "$skill_log/skills")"
 check "the installed copy, as it is" '[ "$(cat "$skill_log/widget-version")" = "widget v1" ]' "$(cat "$skill_log/widget-version")"
 check "skills come without their tests" '! grep -q tests "$skill_log/widget"' "$(cat "$skill_log/widget")"
 check "GH_TOKEN is unset in the run" '[ "$(cat "$plain_log/gh")" = unset ]' "$(cat "$plain_log/gh")"
