@@ -58,8 +58,6 @@ merged_at: 2026-10-02
 base: $(git merge-base HEAD^1 HEAD^2)
 head: $(git rev-parse HEAD^2)
 prompt: |
-  /tdd-fix parse_duration("1h30m") returns 3630, it should be 5400
-plain_prompt: |
   parse_duration("1h30m") returns 3630, it should be 5400. Fix it.
 hidden_tests: [test_minutes.py]
 test_command: python3 -m unittest -q test_minutes

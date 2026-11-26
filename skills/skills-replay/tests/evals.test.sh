@@ -88,6 +88,7 @@ for case_dir in "$EVALS"/*/; do
       check "$c: the task's base is where the branch left main" 'grep -q "^base: $(git -C "$p" merge-base HEAD^1^1 HEAD^1^2)$" "$task"' "$(grep ^base "$task")"
       check "$c: the task file is committed" '[ -f "$task" ] && git -C "$p" ls-files --error-unmatch "$task" >/dev/null 2>&1' "missing"
       check "$c: the task names no skill" '! grep -q "^skills:" "$task"' "$(cat "$task")"
+      check "$c: the prompt calls no slash command" 'python3 -c "import sys,yaml; t=yaml.safe_load(open(sys.argv[1])); sys.exit(t[\"prompt\"].lstrip().startswith(\"/\") or \"plain_prompt\" in t)" "$task"' "$(grep -A1 prompt "$task")"
       if python3 "$REPLAY" run "$task" "$WORK/$c/dry" --model none --runs 0 >/dev/null 2>&1; then
         s="$(python3 "$REPLAY" summarize "$WORK/$c/dry/app-pr12/"*)"
         check "$c: the dry check passes the original PR" 'echo "$s" | grep -qF "| original PR | 1/1 | 1/1 |"' "$s"
