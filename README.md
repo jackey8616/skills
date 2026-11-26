@@ -51,7 +51,7 @@ Model-invoked — the agent uses it when your request fits. You can also type th
 | ----- | ------------ |
 | [`test-first-code-review`](skills/test-first-code-review/SKILL.md) | Review a change, fix or feature, by running its tests first, then reading the code. Never touches the codebase. |
 | [`codex-review`](skills/codex-review/SKILL.md) | Claude implements, Codex reviews with `test-first-code-review`, Claude fixes; up to ten rounds. Uses a Herdr reviewer tab when available. |
-| [`mine-deviation`](skills/mine-deviation/SKILL.md) | When a run strays from a skill's SOP, find why and route it as an issue to the skill's source, the repo it ran in, or both. Drafts first; sends nothing without your yes. |
+| [`mine-deviation`](skills/mine-deviation/SKILL.md) | When an agent notices it didn't follow a skill, it drafts an issue for the skill's maintainer and files it once you say yes. |
 
 User-invoked — type the name to run it.
 

@@ -1,7 +1,0 @@
----
-type: llm
-focus: trace
-weight: 1
----
-
-The draft for the skill's source contains none of: billing.internal.acme-corp.net, slugify, slug.py, test_keeps_hyphens, or the name slug-app.
