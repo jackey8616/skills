@@ -1,16 +1,18 @@
 ---
 name: skills-replay
-description: Replay merged PRs on a new model, with and without the skill they were made with, and compare both with the original PR.
+description: Replay merged PRs on a new model, with no skills and with your installed skills, to measure what the model can do on its own and what skills add, against the original PR.
 disable-model-invocation: true
 ---
 
 # Skills replay
 
-`/skills-audit` asks whether a model follows a skill's rules, on small cases written for those rules. This asks the question it can't: on real work, is the result better with the skill, and does a new model still need it? It takes PRs that were made with a skill and goes back to where each began: the base commit, the user's original prompt, no history after it. Then it runs the task again on the model you name, once with nothing loaded (`plain`) and once with the skill as you have it installed (`skill`), and grades both, and the original PR, on the same evidence.
+`/skills-audit` asks whether a model follows a skill's rules, on small cases written for those rules. This asks something else: on real work, can the model meet the requirement on its own, and how much do skills add? It takes merged PRs and goes back to where each began: the base commit, the user's original prompt, no history after it. Then it runs the task again on the model you name, once with no skills at all (`plain`: the model's own ability) and once with every skill the user has installed (`skills`: the model as they work with it), and grades both, and the original PR, on the same evidence.
 
-`$ARGUMENTS`: the repo (a path to a local clone) and its PR numbers, or paths to task files, then `--model <model> [<model>…]`, optionally `--runs <n>` (default 3) and `--skill-ref <ref>`. Empty → ask which repo and PRs. Do nothing else first.
+The task names no skill. The comparison is the model with skills against the model without, not one skill against none, so a PR made with any skill, or none, can be replayed. Over model releases, `plain` rising toward the original PR is the model getting able to do the work unaided, and the gap to `skills` is what the skills still add.
 
-The `skill` arm loads the user's installed copy of each skill, the version they use today, so the question is whether *that* still pays. Each run records a digest of what it loaded, and the report prints it: two dates with different digests had different skills as well as different models. To pin a version instead, the task file names the skills repo and a commit (`references/task-file.md`). `--skill-ref <ref>` reads every skill from its repo at that commit, as an arm named `skill@<ref>`, for instance to see whether the skill's changes since the PR helped.
+`$ARGUMENTS`: the repo (a path to a local clone) and its PR numbers, or paths to task files, then `--model <model> [<model>…]`, optionally `--runs <n>` (default 3). Empty → ask which repo and PRs. Do nothing else first.
+
+The `skills` arm copies `~/.claude/skills` as it is (`--skills-dir <dir>` for another set). The report names the skills loaded and a digest of their files: two dates with different digests had a different skill set as well as a different model.
 
 ## 1. Set up
 
@@ -19,19 +21,19 @@ The `skill` arm loads the user's installed copy of each skill, the version they 
 
 ## 2. Task files
 
-Each PR needs `<repo>/.skills-replay/<repo>-pr<N>/task.yaml`. One exists → read it, and go to section 3. None → read `references/task-file.md` and write it. Most of it comes from git and `gh`. Five parts can't come from those alone, and each needs the user's OK before any run:
+Each PR needs `<repo>/.skills-replay/<repo>-pr<N>/task.yaml`. One exists → read it, and go to section 3. None → read `references/task-file.md` and write it. Most of it comes from git and `gh`. Four parts can't come from those alone, and each needs the user's OK before any run:
 
 - **prompt**: the user's exact words. Found in a session, the PR body, or from the user. Never written by you: a prompt you wrote measures your wording, not the user's task.
 - **plain_prompt**: the same request with no slash command, when the prompt starts with one. It states what the user wanted, not the skill's method. A plain prompt that spells out the skill's steps hands the plain arm the skill, and the comparison then shows nothing.
 - **hidden_tests** and **test_command**: the PR's own tests, and the command that runs them.
 - **rubric**: 3–6 things the change had to get right, from the PR's description and review comments.
-- **skills**: which skill the PR was made with, by name. The PR rarely says, so ask unless the session does. The name is enough: the arm loads the installed copy. Don't ask for a version unless the user wants one pinned.
+Don't ask which skill the PR was made with: the replay doesn't need it.
 
-Show the five together, per PR, with where each came from. A PR whose session took several user turns: ask whether to fold the turns into one prompt or drop the PR. A replay of the first message alone grades the model on a task the user never gave it.
+Show the four together, per PR, with where each came from. A PR whose session took several user turns: ask whether to fold the turns into one prompt or drop the PR. A replay of the first message alone grades the model on a task the user never gave it.
 
 Writing in the user's repo is theirs to commit. Say where the files are and leave the commit to their word.
 
-One PR tells little: a model can have a good or bad day on any one task. Three or more PRs, made with different skills where the user has them, tell more. Say so if the user names one.
+One PR tells little: a model can have a good or bad day on any one task. Three or more PRs, of different kinds of work, tell more. Say so if the user names one.
 
 ## 3. Check without a model
 
@@ -70,7 +72,7 @@ Then, before the first run, two checks that sections 2 and 3 didn't need:
 One command per PR and model, in the background:
 
 ```bash
-python3 "${CLAUDE_SKILL_DIR}/scripts/replay.py" run <task.yaml> <base> --model <model> --runs <n> [--skill-ref <ref>] [-j 2]
+python3 "${CLAUDE_SKILL_DIR}/scripts/replay.py" run <task.yaml> <base> --model <model> --runs <n> [--skills-dir <dir>] [-j 2]
 ```
 
 The model is the exact id the user gave, not a family name. A name like `opus` moves to a new model on its own, and two dates would then compare different models under one label. `-j` runs that many sessions at once. They share one rate limit, so keep it low. The script prints the label directory, `<label>` from here on (`<base>/<task-id>/<YYYY-MM-DD>-<model>`). The module docstring lists what each run writes.
@@ -112,16 +114,17 @@ python3 "${CLAUDE_SKILL_DIR}/scripts/replay.py" summarize <label> [<label>…]
 
 It prints one table per PR and model: the original PR, then each arm, with hidden tests, checks and rubric passed, wins, ties and losses against the original PR, mean cost, turns and minutes, and runs that leaked. Under it go the warnings: runs that may have seen the PR, didn't finish, or changed nothing.
 
-Save it to `<repo>/.skills-replay/results/<YYYY-MM-DD>-<model>.md`, one file per model and date, holding every PR run that day. Then compare with the earlier files there in one table: PRs down the side, then `plain` and `skill` per model or date across. Only these summaries go in the repo. The run directories stay in `<base>`.
+Save it to `<repo>/.skills-replay/results/<YYYY-MM-DD>-<model>.md`, one file per model and date, holding every PR run that day. Then compare with the earlier files there in one table: PRs down the side, then `plain` and `skills` per model or date across, with each date's skills digest. Only these summaries go in the repo. The run directories stay in `<base>`.
 
 Read the gap between the arms, not either score alone:
 
-- **skill above plain** → the skill still pays on this model.
-- **skill ≈ plain, on most PRs** → the model now does unaided what the skill taught. The skill is a candidate to cut down or retire. One PR can't show this: several can.
-- **skill below plain** → the skill gets in the way now. The transcripts show which instruction: a step the model would have skipped, a check it now makes anyway.
+- **plain meets the PR's bar** (its hidden tests, checks and rubric) → the model can do this kind of work on its own.
+- **plain falls short, skills meets it** → the skills carry the model here. The transcripts show which skill fired and what it changed.
+- **skills ≈ plain, on most PRs** → the model now does unaided what the skills taught. The skills are candidates to cut down or retire. One PR can't show this: several can.
+- **skills below plain** → the skills get in the way now. The transcripts show which instruction: a step the model would have skipped, a check it now makes anyway.
 - **both below the original PR** → the new model is worse at this task, or the original needed the user's steering in later turns. The transcript of the original session settles which.
-- **`skill@<ref>` against `skill`** → whether the skill's changes between that commit and today helped.
-- **The digest changed between two dates** → the skill changed as well as the model. Read the gap against that, or pin the version and replay again.
+- **plain across dates** → the trend in the model's own ability. It doesn't depend on the skills, so it compares across any two dates.
+- **The skills digest changed between two dates** → the skill set changed as well as the model. Read the `skills` column and the gap against that.
 
 Before you put a change down to the model, read that PR's runs: a leak, a flaky test, or a broken `setup` looks the same in a score. Leave runs with leaks out of the comparison and say how many.
 
@@ -137,7 +140,7 @@ Before you put a change down to the model, read that PR's runs: a leak, a flaky 
 <PR × model/date table, or "first replay">
 
 ## What it shows
-- <the gap and what it means, per skill, with how many PRs back it>
+- <what plain shows about the model on its own, and what the gap to skills shows, with how many PRs back each>
 
 ## Left out
 - <runs dropped for leaks or failures, and tasks skipped, with why>
@@ -145,4 +148,4 @@ Before you put a change down to the model, read that PR's runs: a leak, a flaky 
 Results file: <repo>/.skills-replay/results/<file>
 ```
 
-What to do with a skill the replay shows is the user's call, with your recommendation first. Retiring or rewriting a skill is a change in the skills repo, and `/skills-audit` is how to make it.
+What to do about the skills is the user's call, with your recommendation first. Retiring or rewriting one is a change in the skills repo, and `/skills-audit` is how to make it.

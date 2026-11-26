@@ -50,12 +50,6 @@ printf "# duration\n\nparse_duration turns \"1h30m\" into seconds.\n" > README.m
 git add -A && commit "Add a README"
 git -c user.name="Dana Wu" -c user.email=dana@example.com merge -q --no-ff fix-minutes -m "Merge pull request #12 from dana/fix-minutes" -m "Parse minutes in durations"
 git branch -q -D fix-minutes
-skills="$(cd .. && pwd)/skills-src"
-mkdir -p "$skills/skills/tdd-fix"
-git -C "$skills" init -q -b main
-printf -- "---\nname: tdd-fix\ndescription: Fix a bug test first.\n---\n\nWrite a failing test for the bug, then fix it.\n" > "$skills/skills/tdd-fix/SKILL.md"
-git -C "$skills" add -A
-git -C "$skills" -c user.name="Dana Wu" -c user.email=dana@example.com commit -qm "Add tdd-fix"
 mkdir -p .skills-replay/app-pr12
 cat > .skills-replay/app-pr12/task.yaml <<YAML
 id: app-pr12
@@ -67,10 +61,6 @@ prompt: |
   /tdd-fix parse_duration("1h30m") returns 3630, it should be 5400
 plain_prompt: |
   parse_duration("1h30m") returns 3630, it should be 5400. Fix it.
-skills:
-  - name: tdd-fix
-    repo: $skills
-    ref: $(git -C "$skills" rev-parse --short HEAD)
 hidden_tests: [test_minutes.py]
 test_command: python3 -m unittest -q test_minutes
 checks:

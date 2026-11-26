@@ -2,7 +2,7 @@
 
     python3 replay.py doctor [--live]
     python3 replay.py run <task.yaml> <base-dir> --model <m> [--runs N]
-                          [--arms plain,skill] [--skill-ref REF] [-j N]
+                          [--arms plain,skills] [--skills-dir DIR] [-j N]
                           [--repo <path>]
     python3 replay.py summarize <label-dir> [<label-dir>...]
 
@@ -13,7 +13,7 @@ any repository (your scratchpad).
 
 `run` writes <base>/<task-id>/<YYYY-MM-DD>-<model>/ (the label dir):
 
-  run.json                    the model, arms, CLI version, skill refs
+  run.json                    the model, arms, CLI version, the skills loaded
   base-check.json             the PR's hidden tests run on the untouched base:
                               they should fail, or the task can't tell a fix
   reference/                  the original PR applied to the base
@@ -30,11 +30,14 @@ any repository (your scratchpad).
 
 Every run starts from a fresh copy of the base commit: one commit of history,
 no remote, no .skills-replay/, .claude/skills/ or .agents/skills/. Its
-CLAUDE_CONFIG_DIR is empty but for the arm's skills, so the user's own skills
-don't load, and no MCP server starts. `plain` gets no skills and the task's
-plain_prompt; `skill` gets the task's skills and the prompt as it was typed.
-A skill is the user's installed copy unless the task names its `repo` (and
-`ref`); --skill-ref reads every skill from its repo at REF, as arm `skill@REF`.
+CLAUDE_CONFIG_DIR is new, and no MCP server starts. `plain` gets no skills
+and the task's plain_prompt: the model on its own. `skills` gets a copy of
+every skill the user has installed (--skills-dir, default ~/.claude/skills)
+and the prompt as it was typed: the model as the user works with it. The
+task file names no skill: the comparison is the model with its skills
+against the model without, not one skill against none. run.json records the
+skills' names and a digest of their files, so two dates can tell whether the
+set changed between them.
 
 `summarize` reads label dirs, with any grading.json and compare/comparison.json
 the graders wrote, and prints a Markdown report. Set CLAUDE_BIN to use another
@@ -92,7 +95,6 @@ def load_task(path, repo=None):
         if git(repo, "cat-file", "-e", f"{task[key]}^{{commit}}", check=False).returncode:
             sys.exit(f"{repo}: no commit {task[key]} ({key}). Fetch it first (references/task-file.md).")
     task.setdefault("plain_prompt", task["prompt"])
-    task.setdefault("skills", [])
     task.setdefault("setup", [])
     task.setdefault("hidden_tests", [])
     task.setdefault("checks", [])
@@ -162,30 +164,6 @@ def one_check(name, cmd, cwd):
         return {"name": name, "passed": False, "exit": None, "tail": f"timed out after {CHECK_TIMEOUT}s"}
 
 
-def installed_skill(name):
-    """The user's installed copy of a skill, where Claude Code or Codex installs skills."""
-    for rel in (".claude/skills", ".agents/skills"):
-        d = Path.home() / rel / name
-        if (d / "SKILL.md").is_file():
-            return d
-    return None
-
-
-def check_skills(skills, ref_override):
-    """Refuse a task whose skills can't be found, before anything runs."""
-    for s in skills:
-        if s.get("repo"):
-            src = Path(s["repo"]).expanduser()
-            ref = ref_override or s.get("ref") or "HEAD"
-            if git(src, "cat-file", "-e", f"{ref}^{{commit}}", check=False).returncode:
-                sys.exit(f"skill {s['name']}: no commit {ref} in {src}")
-        elif ref_override or s.get("ref"):
-            sys.exit(f"skill {s['name']}: a ref needs `repo`, the skills repo to read it from")
-        elif not installed_skill(s["name"]):
-            sys.exit(f"skill {s['name']}: not installed in ~/.claude/skills or ~/.agents/skills; "
-                     "install it, or give `repo` (and `ref`)")
-
-
 def digest(d):
     h = hashlib.sha256()
     for f in sorted(p for p in d.rglob("*") if p.is_file()):
@@ -193,32 +171,18 @@ def digest(d):
     return h.hexdigest()[:12]
 
 
-def config_dir(dest, skills, ref_override):
-    """An empty CLAUDE_CONFIG_DIR holding only these skills.
+def skill_names(d):
+    return sorted(str(f.parent.relative_to(d)) for f in d.rglob("SKILL.md"))
 
-    A skill with `repo` is read from that repo at its `ref` (HEAD if none);
-    one without is the user's installed copy. Either way the result records
-    a digest of what was loaded, so results from two dates can tell whether
-    the skill changed between them."""
-    (dest / "skills").mkdir(parents=True)
-    used = []
-    for s in skills:
-        target = dest / "skills" / s["name"]
-        if s.get("repo"):
-            src = Path(s["repo"]).expanduser()
-            ref = ref_override or s.get("ref") or "HEAD"
-            path = s.get("path", f"skills/{s['name']}")
-            archive = subprocess.run(["git", "-C", str(src), "archive", ref, path], check=True, capture_output=True)
-            with tempfile.TemporaryDirectory() as tmp:
-                subprocess.run(["tar", "-x", "-C", tmp], input=archive.stdout, check=True)
-                shutil.copytree(Path(tmp) / path, target, ignore=shutil.ignore_patterns("tests"))
-            entry = {"name": s["name"], "ref": git(src, "rev-parse", "--short", ref).stdout.strip()}
-        else:
-            shutil.copytree(installed_skill(s["name"]), target, ignore=shutil.ignore_patterns("tests"))
-            entry = {"name": s["name"], "ref": "installed"}
-        entry["digest"] = digest(target)
-        used.append(entry)
-    return used
+
+def config_dir(dest, skills_dir):
+    """A new CLAUDE_CONFIG_DIR, holding a copy of skills_dir as its skills/ if given."""
+    dest.mkdir(parents=True)
+    if skills_dir:
+        shutil.copytree(skills_dir, dest / "skills", ignore=shutil.ignore_patterns("tests"))
+    else:
+        (dest / "skills").mkdir()
+    return skill_names(dest / "skills")
 
 
 def blocks(event):
@@ -266,13 +230,13 @@ def leaks(events, task):
     return sorted({p for p in patterns if p and re.search(p, blob)})
 
 
-def one_run(repo, task, label_dir, base, arm, k, model, skill_ref):
+def one_run(repo, task, label_dir, base, arm, k, model, skills_dir):
     out = label_dir / arm / f"run-{k}"
     out.mkdir(parents=True)
     project = base / "p" / secrets.token_hex(6) / "project"
     cfg = base / "c" / secrets.token_hex(6)
     start = snapshot(repo, task, project)
-    used = config_dir(cfg, task["skills"] if arm != "plain" else [], skill_ref)
+    used = config_dir(cfg, skills_dir if arm != "plain" else None)
     prompt = task["plain_prompt"] if arm == "plain" else task["prompt"]
     env = {k_: v for k_, v in os.environ.items() if k_ not in SECRET_ENV}
     env["CLAUDE_CONFIG_DIR"] = str(cfg)
@@ -336,15 +300,25 @@ def cmd_run(a):
         sys.exit(f"{label_dir} exists: move it aside or pick another base dir")
     label_dir.mkdir(parents=True)
     arms = [x.strip() for x in a.arms.split(",") if x.strip()]
-    if "skill" in arms and not task["skills"]:
-        sys.exit("arm `skill` needs `skills` in the task file")
-    if "skill" in arms:
-        check_skills(task["skills"], a.skill_ref)
-    arm_names = {arm: (f"skill@{a.skill_ref}" if arm == "skill" and a.skill_ref else arm) for arm in arms}
+    unknown = [x for x in arms if x not in ("plain", "skills")]
+    if unknown:
+        shutil.rmtree(label_dir)
+        sys.exit(f"unknown arm(s): {', '.join(unknown)}. The arms are plain and skills.")
+    skills_dir = Path(a.skills_dir).expanduser().resolve() if a.skills_dir else Path.home() / ".claude" / "skills"
+    loaded = {}
+    if "skills" in arms and a.runs > 0:
+        names = skill_names(skills_dir) if skills_dir.is_dir() else []
+        if not names:
+            shutil.rmtree(label_dir)
+            sys.exit(f"{skills_dir} holds no skills, so the skills arm would be the plain arm. "
+                     "Install skills there, or point --skills-dir at them.")
+        with tempfile.TemporaryDirectory() as tmp:
+            config_dir(Path(tmp) / "c", skills_dir)
+            loaded = {"dir": str(skills_dir), "names": names, "digest": digest(Path(tmp) / "c" / "skills")}
     version = sh([os.environ.get("CLAUDE_BIN", "claude"), "--version"], check=False).stdout.strip()
     (label_dir / "run.json").write_text(json.dumps(
         {"task": task["id"], "pr": task.get("pr"), "model": a.model, "runs": a.runs,
-         "arms": list(arm_names.values()), "claude_version": version, "skill_ref": a.skill_ref,
+         "arms": arms, "claude_version": version, "skills": loaded,
          "merged_at": str(task.get("merged_at", ""))}, indent=2))
 
     tmp = base / "p" / secrets.token_hex(6) / "project"
@@ -364,10 +338,10 @@ def cmd_run(a):
     (ref / "changes.diff").write_text(reference_diff)
     shutil.rmtree(tmp.parent, ignore_errors=True)
 
-    jobs = [(arm_names[arm], k) for k in range(1, a.runs + 1) for arm in arms]
+    jobs = [(arm, k) for k in range(1, a.runs + 1) for arm in arms]
     with concurrent.futures.ThreadPoolExecutor(max_workers=a.jobs) as pool:
         futures = {pool.submit(one_run, repo, task, label_dir, base, name, k, a.model,
-                               a.skill_ref if name != "plain" else None): (name, k) for name, k in jobs}
+                               skills_dir): (name, k) for name, k in jobs}
         for f in concurrent.futures.as_completed(futures):
             name, k = futures[f]
             try:
@@ -418,14 +392,10 @@ def cmd_summarize(a):
         print(f"## {info.get('task')} — {info.get('model')}\n")
         print(f"PR #{info.get('pr')}, merged {info.get('merged_at') or '?'}. {info.get('claude_version')}. "
               f"{info.get('runs')} run(s) per arm.\n")
-        loaded = {}
-        for m in (read(r) for r in sorted(d.glob("*/run-*/meta.json"))):
-            for sk in (m or {}).get("skills") or []:
-                loaded.setdefault((m["arm"], sk["name"]), set()).add(f"{sk['ref']}, digest {sk.get('digest', '?')}")
-        for (arm, name), versions in sorted(loaded.items()):
-            print(f"- `{arm}` loaded {name}: {'; '.join(sorted(versions))}")
+        loaded = info.get("skills") or {}
         if loaded:
-            print()
+            print(f"`skills` loaded {len(loaded['names'])} skill(s) from {loaded['dir']}, digest {loaded['digest']}: "
+                  f"{', '.join(loaded['names'])}.\n")
         warnings = []
         if (base_check.get("hidden_tests") or {}).get("passed"):
             warnings.append("The hidden tests already pass on the base commit, so they can't tell a fix from no change.")
@@ -508,8 +478,8 @@ def main():
     r.add_argument("base")
     r.add_argument("--model", required=True)
     r.add_argument("--runs", type=int, default=3)
-    r.add_argument("--arms", default="plain,skill")
-    r.add_argument("--skill-ref")
+    r.add_argument("--arms", default="plain,skills")
+    r.add_argument("--skills-dir")
     r.add_argument("-j", "--jobs", type=int, default=2)
     r.add_argument("--repo")
     s = sub.add_parser("summarize")

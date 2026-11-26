@@ -12,10 +12,6 @@ prompt: |                    # what the user typed, exactly, slash command and a
   /test-first-code-review the retry fix on this branch
 plain_prompt: |              # the same request for an agent without the skill
   Review the retry fix on this branch: run its tests first, then read the code.
-skills:                      # what the `skill` arm loads: the installed copy
-  - name: test-first-code-review
-  #  repo: ~/src/skills      # optional: read it from a skills repo instead
-  #  ref: 1a2b3c4            # optional, with repo: at this commit (default HEAD)
 setup:                       # run in each snapshot before the model starts
   - npm ci
 hidden_tests:                # test files the PR added or changed
@@ -56,9 +52,7 @@ A session that took several user turns can't be replayed from its first message 
 
 **plain_prompt.** Needed when `prompt` starts with a slash command: the plain arm has no such command, and the CLI would answer "unknown skill" and stop. Keep the request and its arguments, and say in plain words what the user wanted done, not how the skill does it. "Review the retry fix" is the user's task; "run its tests first, then read the code" is the skill's method. Leave the method out unless the user's own words held it, so the plain arm isn't handed the skill in disguise. Show the user both prompts before running.
 
-**skills.** The skill the PR was made with, by name. The `skill` arm loads the user's installed copy, from `~/.claude/skills/<name>` or `~/.agents/skills/<name>`, so the replay measures the skill they use today. Each run's `meta.json` records a digest of the files it loaded.
-
-Pin a version only when the user wants one: `repo`, a local clone of the skills repo, and `ref`, a commit in it. For the version a PR was made with, an install copies `main`, so `git -C <skills> log -1 --format=%h --before=<the PR's first commit date> main` is a fair guess. `--skill-ref` overrides `ref` for every skill, and needs `repo`.
+**No skills.** The task file names none. The `plain` arm loads no skills and the `skills` arm loads every skill the user has installed, so the task is the same whatever skill the PR was made with.
 
 **hidden_tests and test_command.** The test files in `gh pr view --json files` that the PR added or changed. `test_command` runs them and nothing slow. `replay.py` overlays them from `head` after each run, so a run is graded on the PR's own tests whether it wrote tests or not. They should fail on the base and pass on `head`: `base-check.json` and the reference row of the report show both. A PR with no tests can still be replayed. Set `test_command` to the suite the repo already has, and lean on `rubric`.
 
@@ -70,7 +64,7 @@ Pin a version only when the user wants one: `repo`, a local clone of the skills 
 
 - **Git history.** Each snapshot is one commit, with no remote.
 - **GitHub.** `gh`, `git fetch/pull/clone/remote`, WebFetch and WebSearch are denied, no MCP server starts, and `GH_TOKEN`/`GITHUB_TOKEN` are unset. A run can still reach the network through other tools, for example `curl` in Bash. `meta.json` lists `leaks`: tool calls and results that name the PR's head commit, its page, `gh pr`, `gh api` or `git fetch`. Leave a run with leaks out of the comparison, and say so in the report.
-- **The user's skills.** `CLAUDE_CONFIG_DIR` is a new empty directory with only the arm's skills. Claude Code's built-in skills still load in both arms. They're the same on both sides, so they don't change the comparison.
+- **Skills the arm shouldn't have.** `CLAUDE_CONFIG_DIR` is a new directory: empty for `plain`, a copy of the user's installed skills (without their `tests/`) for `skills`. The project's own `.claude/skills/` and `.agents/skills/` are stripped from both. Claude Code's built-in skills still load in both arms. They're the same on both sides, so they don't change the comparison.
 
 What it can't hide: a model trained after `merged_at` on a public repo may have seen the PR. Note it next to that model's results. A replay is most telling on PRs merged after the model's training cutoff.
 
