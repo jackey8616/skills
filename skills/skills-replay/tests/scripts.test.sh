@@ -18,14 +18,15 @@ check() { if eval "$2"; then ok "$1"; else bad "$1" "$3"; fi; }
 commit() { git -C "$1" add -A && git -C "$1" -c user.name=t -c user.email=t@t commit -qm "$2"; }
 
 # The repo: add.sh subtracts; the PR makes it add and brings a test for it.
-# The base also holds a project skill and old replay files, which every
-# snapshot must drop.
+# The base also holds a project skill and another PR's replay files. The task
+# file sits in the repo's own replays/ (the skills repo replaying itself), so
+# every snapshot must drop both.
 repo="$WORK/app"
-mkdir -p "$repo/.claude/skills/local" "$repo/.skills-replay/old"
+mkdir -p "$repo/.claude/skills/local" "$repo/replays/old"
 git -C "$repo" init -q -b main
 printf '#!/usr/bin/env bash\necho $(( $1 - $2 ))\n' > "$repo/add.sh"
 echo 'x' > "$repo/.claude/skills/local/SKILL.md"
-echo 'x' > "$repo/.skills-replay/old/task.yaml"
+echo 'x' > "$repo/replays/old/task.yaml"
 commit "$repo" base
 base=$(git -C "$repo" rev-parse HEAD)
 git -C "$repo" checkout -qb fix
@@ -46,8 +47,8 @@ echo 'secret case' > "$home/.claude/skills/widget/tests/case.md"
 echo 'gadget' > "$home/.claude/skills/gadget/SKILL.md"
 export HOME="$home"
 
-mkdir -p "$repo/.skills-replay/app-pr7"
-task="$repo/.skills-replay/app-pr7/task.yaml"
+mkdir -p "$repo/replays/app/app-pr7"
+task="$repo/replays/app/app-pr7/task.yaml"
 cat > "$task" <<EOF
 id: app-pr7
 pr: 7
@@ -134,7 +135,7 @@ check "skills come without their tests" '! grep -q tests "$skill_log/widget"' "$
 check "GH_TOKEN is unset in the run" '[ "$(cat "$plain_log/gh")" = unset ]' "$(cat "$plain_log/gh")"
 check "the project has no remote" '[ "$(cat "$plain_log/remotes")" -eq 0 ]' "$(cat "$plain_log/remotes")"
 check "the project has only base and setup commits" '[ "$(cat "$plain_log/commits")" -eq 2 ]' "$(cat "$plain_log/commits")"
-check "the project drops .claude/skills and .skills-replay" '! grep -qE "^(\.claude|\.skills-replay)$" "$plain_log/files"' "$(cat "$plain_log/files")"
+check "the project drops .claude/skills and replays/" '! grep -qE "^(\.claude|replays)$" "$plain_log/files"' "$(cat "$plain_log/files")"
 check "the project path names nothing" '! grep -qE "app|pr7|plain|skill" "$plain_log/cwd"' "$(cat "$plain_log/cwd")"
 check "gh and web tools are denied" 'grep -q "^Bash(gh:\*)$" "$plain_log/argv" && grep -q "^WebFetch$" "$plain_log/argv" && grep -q "^--strict-mcp-config$" "$plain_log/argv"' "$(cat "$plain_log/argv")"
 check "the model is passed exactly" 'grep -q "^claude-test-1$" "$plain_log/argv"' "$(cat "$plain_log/argv")"
@@ -188,15 +189,32 @@ check "an unknown arm is refused" '[ "$code" -ne 0 ] && echo "$out" | grep -q "u
 check "a dry run needs no skills" 'python3 "$REPLAY" run "$task" "$WORK/l" --model none --runs 0 --skills-dir "$WORK/empty" >/dev/null 2>&1' "refused"
 check "plain alone needs no skills" 'python3 "$REPLAY" run "$task" "$WORK/k" --model m --runs 1 --arms plain --skills-dir "$WORK/empty" >/dev/null 2>&1' "refused"
 
+echo "task file outside the repo"
+outside="$WORK/skills-clone/replays/app/app-pr7"
+mkdir -p "$outside"
+git -C "$WORK/skills-clone" init -q -b main
+printf 'repo: someone/app\n' | cat - "$task" > "$outside/task.yaml"
+out=$(python3 "$REPLAY" run "$outside/task.yaml" "$WORK/o1" --model none --runs 0 2>&1); code=$?
+check "without --repo it says to pass one" '[ "$code" -ne 0 ] && echo "$out" | grep -q "neither the task.s base nor its head: the task file isn.t in the PR.s repo. Pass --repo <a clone of someone/app>"' "$out"
+rm -rf "$WORK/skills-clone/.git"
+out=$(python3 "$REPLAY" run "$outside/task.yaml" "$WORK/o2" --model none --runs 0 2>&1); code=$?
+check "outside any repo it says to pass one" '[ "$code" -ne 0 ] && echo "$out" | grep -q "isn.t in a git repo: pass --repo <a clone of someone/app>"' "$out"
+python3 "$REPLAY" run "$outside/task.yaml" "$WORK/o3" --repo "$repo" --model none --runs 0 >/dev/null 2>&1
+s=$(python3 "$REPLAY" summarize "$WORK/o3/app-pr7/"* 2>&1)
+check "with --repo it replays that repo" 'echo "$s" | grep -qF "| original PR | 1/1 | 1/1 |"' "$s"
+rm -rf "$log"/*
+python3 "$REPLAY" run "$outside/task.yaml" "$WORK/o4" --repo "$repo" --model m --runs 1 --arms plain >/dev/null 2>&1
+check "a task file outside the repo strips none of the repo's own files" 'grep -qx add.sh "$(dirname "$(ls "$log"/*/argv | head -1)")/files" && grep -qx replays "$(dirname "$(ls "$log"/*/argv | head -1)")/files"' "$(cat "$log"/*/files)"
+
 echo "bad tasks"
-sed '/^test_command/d' "$task" > "$repo/.skills-replay/app-pr7/no-test.yaml"
-check "a task without test_command is refused" '! python3 "$REPLAY" run "$repo/.skills-replay/app-pr7/no-test.yaml" "$WORK/x" --model m --runs 0 >/dev/null 2>&1' "accepted"
-sed "s/^head: .*/head: 0123456789abcdef0123456789abcdef01234567/" "$task" > "$repo/.skills-replay/app-pr7/no-head.yaml"
-out=$(python3 "$REPLAY" run "$repo/.skills-replay/app-pr7/no-head.yaml" "$WORK/x" --model m --runs 0 2>&1); code=$?
+sed '/^test_command/d' "$task" > "$repo/replays/app/app-pr7/no-test.yaml"
+check "a task without test_command is refused" '! python3 "$REPLAY" run "$repo/replays/app/app-pr7/no-test.yaml" "$WORK/x" --model m --runs 0 >/dev/null 2>&1' "accepted"
+sed "s/^head: .*/head: 0123456789abcdef0123456789abcdef01234567/" "$task" > "$repo/replays/app/app-pr7/no-head.yaml"
+out=$(python3 "$REPLAY" run "$repo/replays/app/app-pr7/no-head.yaml" "$WORK/x" --model m --runs 0 2>&1); code=$?
 check "a head that isn't fetched is refused" '[ "$code" -ne 0 ] && echo "$out" | grep -q "no commit .* (head). Fetch it first"' "$out"
-sed "s/^head: .*/head: $base/" "$task" > "$repo/.skills-replay/app-pr7/no-op.yaml"
-sed -i 's/^test_command: .*/test_command: "true"/' "$repo/.skills-replay/app-pr7/no-op.yaml"
-python3 "$REPLAY" run "$repo/.skills-replay/app-pr7/no-op.yaml" "$WORK/y" --model m --runs 0 >/dev/null 2>&1
+sed "s/^head: .*/head: $base/" "$task" > "$repo/replays/app/app-pr7/no-op.yaml"
+sed -i 's/^test_command: .*/test_command: "true"/' "$repo/replays/app/app-pr7/no-op.yaml"
+python3 "$REPLAY" run "$repo/replays/app/app-pr7/no-op.yaml" "$WORK/y" --model m --runs 0 >/dev/null 2>&1
 check "warns when the hidden tests pass on the base" 'python3 "$REPLAY" summarize "$WORK/y/app-pr7/"* | grep -q "already pass on the base"' "$(python3 "$REPLAY" summarize "$WORK/y/app-pr7/"*)"
 
 echo

@@ -7,9 +7,10 @@
     python3 replay.py summarize <label-dir> [<label-dir>...]
 
 <task.yaml> describes one PR (references/task-file.md has the fields). It
-usually sits at <repo>/.skills-replay/<task-id>/task.yaml, and <repo> is the
-git top level of that file unless --repo says otherwise. <base-dir> is outside
-any repository (your scratchpad).
+usually sits in the skills repo, at replays/<repo>/<task-id>/task.yaml, and
+--repo is a clone of the repo the PR was merged into. Without --repo, the
+repo is the git top level of the task file: right only when the skills repo
+replays its own PRs. <base-dir> is outside any repository (your scratchpad).
 
 `run` writes <base>/<task-id>/<YYYY-MM-DD>-<model>/ (the label dir):
 
@@ -29,7 +30,9 @@ any repository (your scratchpad).
   .keys/<arm>-<k>.json        which of A and B is the PR; graders never read it
 
 Every run starts from a fresh copy of the base commit: one commit of history,
-no remote, no .skills-replay/, .claude/skills/ or .agents/skills/. Its
+no remote, no .claude/skills/ or .agents/skills/, and, when the task file
+lies inside the replayed repo, without the top-level directory holding it
+(replays/), so a run never reads another PR's task or results. Its
 CLAUDE_CONFIG_DIR is new, and no MCP server starts. `plain` gets no skills
 and the task's plain_prompt: the model on its own. `skills` gets a copy of
 every skill the user has installed (--skills-dir, default ~/.claude/skills)
@@ -64,7 +67,7 @@ except ImportError:
     print("PyYAML not found. Install it: pip install pyyaml", file=sys.stderr)
     sys.exit(2)
 
-STRIP = [".skills-replay", ".claude/skills", ".agents/skills"]
+STRIP = [".claude/skills", ".agents/skills"]
 ALLOWED = ["Bash", "Read", "Edit", "Write", "Glob", "Grep", "Skill", "Agent", "TodoWrite", "NotebookEdit"]
 DISALLOWED = ["WebFetch", "WebSearch", "Bash(gh:*)", "Bash(git fetch:*)", "Bash(git pull:*)",
               "Bash(git clone:*)", "Bash(git remote:*)"]
@@ -90,10 +93,25 @@ def load_task(path, repo=None):
     for key in ("id", "base", "head", "prompt", "test_command"):
         if not task.get(key):
             sys.exit(f"{path}: `{key}` is required")
-    repo = Path(repo).resolve() if repo else Path(git(path.parent, "rev-parse", "--show-toplevel").stdout.strip())
-    for key in ("base", "head"):
-        if git(repo, "cat-file", "-e", f"{task[key]}^{{commit}}", check=False).returncode:
-            sys.exit(f"{repo}: no commit {task[key]} ({key}). Fetch it first (references/task-file.md).")
+    given = bool(repo)
+    clone = f"a clone of {task['repo']}" if task.get("repo") else "a clone of the PR's repo"
+    if given:
+        repo = Path(repo).resolve()
+    else:
+        top = git(path.parent, "rev-parse", "--show-toplevel", check=False)
+        if top.returncode:
+            sys.exit(f"{path} isn't in a git repo: pass --repo <{clone}>")
+        repo = Path(top.stdout.strip())
+    missing = [k for k in ("base", "head")
+               if git(repo, "cat-file", "-e", f"{task[k]}^{{commit}}", check=False).returncode]
+    if missing == ["base", "head"] and not given:
+        sys.exit(f"{repo} has neither the task's base nor its head: the task file isn't in the PR's repo. "
+                 f"Pass --repo <{clone}>.")
+    for key in missing:
+        sys.exit(f"{repo}: no commit {task[key]} ({key}). Fetch it first (references/task-file.md).")
+    task["_strip"] = []
+    if path.is_relative_to(repo):
+        task["_strip"].append(path.relative_to(repo).parts[0])
     task.setdefault("plain_prompt", task["prompt"])
     task.setdefault("setup", [])
     task.setdefault("hidden_tests", [])
@@ -110,7 +128,7 @@ def snapshot(repo, task, dest):
     dest.mkdir(parents=True)
     archive = subprocess.run(["git", "-C", str(repo), "archive", task["base"]], check=True, capture_output=True)
     subprocess.run(["tar", "-x", "-C", str(dest)], input=archive.stdout, check=True)
-    for rel in STRIP:
+    for rel in STRIP + task["_strip"]:
         shutil.rmtree(dest / rel, ignore_errors=True)
         parent = (dest / rel).parent
         while parent != dest and parent.is_dir() and not any(parent.iterdir()):

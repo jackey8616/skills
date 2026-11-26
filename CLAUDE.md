@@ -26,7 +26,7 @@ claude plugin eval skills/<name> --eval-dir tests/evals --scaffold --allow-tools
 
 To write a skill's evals, run them, and improve or benchmark it, use `/skills-audit <name>`.
 
-To measure, as models change, what a model can do on real work without skills and what the skills add, replay merged PRs with `/skills-replay`. Its task files and results live in the replayed repo, under `.skills-replay/`, not here.
+To measure, as models change, what a model can do on real work without skills and what the skills add, replay merged PRs with `/skills-replay`. Its task files and results live in `replays/<repo>/`, outside `skills/` so no install copies them; `replays/README.md` has the layout.
 
 ## Invocation
 

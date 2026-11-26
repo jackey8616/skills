@@ -50,9 +50,11 @@ printf "# duration\n\nparse_duration turns \"1h30m\" into seconds.\n" > README.m
 git add -A && commit "Add a README"
 git -c user.name="Dana Wu" -c user.email=dana@example.com merge -q --no-ff fix-minutes -m "Merge pull request #12 from dana/fix-minutes" -m "Parse minutes in durations"
 git branch -q -D fix-minutes
-mkdir -p .skills-replay/app-pr12
-cat > .skills-replay/app-pr12/task.yaml <<YAML
-id: app-pr12
+replays="$(cd .. && pwd)/skills/replays/project/project-pr12"
+mkdir -p "$replays"
+cat > "$replays/task.yaml" <<YAML
+id: project-pr12
+repo: dana/duration
 pr: 12
 merged_at: 2026-10-02
 base: $(git merge-base HEAD^1 HEAD^2)
@@ -70,4 +72,3 @@ rubric:
 max_turns: 40
 timeout_seconds: 900
 YAML
-git add -A && commit "Add a replay task for #12"

@@ -1,9 +1,10 @@
 # The task file
 
-One PR, one file: `<repo>/.skills-replay/<task-id>/task.yaml`, in the repo the PR was merged into. `replay.py` strips `.skills-replay/` from every snapshot, so a run never sees it, even when a later PR's base already holds it.
+One PR, one file: `replays/<repo>/<task-id>/task.yaml`, in the skills repo, beside every other repo's. `replay.py` reads the PR's commits from a clone of the PR's repo, given as `--repo`. When the skills repo replays its own PRs, the task file sits inside the repo being replayed, and `replay.py` strips `replays/` from every snapshot, so a run never sees another PR's task or results.
 
 ```yaml
 id: acme-api-pr42            # <repo>-pr<N>; also the results' directory name
+repo: acme/acme-api          # the PR's repo, to name the clone --repo needs
 pr: 42
 merged_at: 2026-08-14        # for reading results against a model's training cutoff
 base: 3f1c2e9...             # full sha: the base branch just before the PR

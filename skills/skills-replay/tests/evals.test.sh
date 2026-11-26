@@ -7,7 +7,8 @@
 # second parent brings test_minutes.py, which fails on the first parent and
 # passes on the second, with no prompt left anywhere in the repo for the
 # case that must ask for it, and a task file that passes the dry check for
-# the case that must count.
+# the case that must count. Both name ../skills/replays as the replays
+# directory, which the scaffold makes beside the project, outside it.
 #
 #   bash skills/skills-replay/tests/evals.test.sh
 set -uo pipefail
@@ -75,22 +76,23 @@ for case_dir in "$EVALS"/*/; do
     empty-arguments-asks)
       check "$c: /skills-replay with no arguments" '[ "$prompt" = /skills-replay ]' "$prompt" ;;
     asks-for-original-prompt)
-      check "$c: PR 12, one model" '[ "$prompt" = "/skills-replay . 12 --model claude-haiku-4-5" ]' "$prompt"
+      check "$c: PR 12, one model, a replays dir" '[ "$prompt" = "/skills-replay . 12 --model claude-haiku-4-5 --replays ../skills/replays" ]' "$prompt"
       p="$(build "$c")" || { bad "$c: fixture builds" "scaffold failed"; continue; }
       pr_premises "$c" "$p"
-      check "$c: no task file" '[ ! -e "$p/.skills-replay" ]' "$(ls -A "$p")"
+      check "$c: an empty replays dir beside the project" '[ -d "$p/../skills/replays" ] && [ -z "$(ls -A "$p/../skills/replays")" ]' "$(ls -A "$p/../skills/replays" 2>&1)"
+      check "$c: nothing replay-like in the project" '[ ! -e "$p/replays" ] && [ ! -e "$p/.skills-replay" ]' "$(ls -A "$p")"
       check "$c: no Claude-Session trailer or prompt in history" '! git -C "$p" log --format=%B | grep -qiE "claude-session|prompt"' "$(git -C "$p" log --format=%B)" ;;
     counts-before-running)
-      check "$c: PR 12, one model, 2 runs" '[ "$prompt" = "/skills-replay . 12 --model claude-haiku-4-5 --runs 2" ]' "$prompt"
+      check "$c: PR 12, one model, 2 runs, a replays dir" '[ "$prompt" = "/skills-replay . 12 --model claude-haiku-4-5 --runs 2 --replays ../skills/replays" ]' "$prompt"
       p="$(build "$c")" || { bad "$c: fixture builds" "scaffold failed"; continue; }
       pr_premises "$c" "$p"
-      task="$p/.skills-replay/app-pr12/task.yaml"
-      check "$c: the task's base is where the branch left main" 'grep -q "^base: $(git -C "$p" merge-base HEAD^1^1 HEAD^1^2)$" "$task"' "$(grep ^base "$task")"
-      check "$c: the task file is committed" '[ -f "$task" ] && git -C "$p" ls-files --error-unmatch "$task" >/dev/null 2>&1' "missing"
+      task="$p/../skills/replays/project/project-pr12/task.yaml"
+      check "$c: the task file is in the replays dir, named for the project" '[ -f "$task" ]' "$(ls -R "$p/../skills" 2>&1)"
+      check "$c: the task's base is where the branch left main" 'grep -q "^base: $(git -C "$p" merge-base HEAD^1 HEAD^2)$" "$task"' "$(grep ^base "$task")"
       check "$c: the task names no skill" '! grep -q "^skills:" "$task"' "$(cat "$task")"
       check "$c: the prompt calls no slash command" 'python3 -c "import sys,yaml; t=yaml.safe_load(open(sys.argv[1])); sys.exit(t[\"prompt\"].lstrip().startswith(\"/\") or \"plain_prompt\" in t)" "$task"' "$(grep -A1 prompt "$task")"
-      if python3 "$REPLAY" run "$task" "$WORK/$c/dry" --model none --runs 0 >/dev/null 2>&1; then
-        s="$(python3 "$REPLAY" summarize "$WORK/$c/dry/app-pr12/"*)"
+      if python3 "$REPLAY" run "$task" "$WORK/$c/dry" --repo "$p" --model none --runs 0 >/dev/null 2>&1; then
+        s="$(python3 "$REPLAY" summarize "$WORK/$c/dry/project-pr12/"*)"
         check "$c: the dry check passes the original PR" 'echo "$s" | grep -qF "| original PR | 1/1 | 1/1 |"' "$s"
         check "$c: the dry check raises no warning" '! echo "$s" | grep -q "^- "' "$s"
       else
