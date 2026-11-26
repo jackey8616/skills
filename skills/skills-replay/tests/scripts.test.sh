@@ -119,6 +119,10 @@ check "the original PR passes them" 'python3 -c "import json,sys; c=json.load(op
 check "the reference diff is the PR" 'grep -q "+echo \$(( \$1 + \$2 ))" "$d/reference/changes.diff" && grep -q test_add.sh "$d/reference/changes.diff"' "$(cat "$d/reference/changes.diff")"
 check "setup is not in the reference diff" '! grep -q setup-ran "$d/reference/changes.diff"' "$(cat "$d/reference/changes.diff")"
 check "a dry summary has no arm rows" '! python3 "$REPLAY" summarize "$d" | grep -qE "^\| (plain|skills) "' "$(python3 "$REPLAY" summarize "$d")"
+CLAUDE_BIN="$WORK/no-such-claude" python3 "$REPLAY" run "$task" "$WORK/noclaude" --model none --runs 0 >/dev/null 2>&1
+check "a dry run needs no claude CLI" 'grep -q "\"claude_version\": \"claude not found\"" "$WORK/noclaude/app-pr7/$(date +%F)-none/run.json"' "$(cat "$WORK/noclaude/app-pr7/"*/run.json 2>&1)"
+out=$(CLAUDE_BIN="$WORK/no-such-claude" python3 "$REPLAY" run "$task" "$WORK/noclaude2" --model m --runs 1 2>&1); code=$?
+check "a real run without the claude CLI is refused up front" '[ "$code" -ne 0 ] && echo "$out" | grep -q "not found: the runs need the claude CLI" && [ ! -e "$WORK/noclaude2/app-pr7/$(date +%F)-m" ]' "$out"
 check "a second run to the same label is refused" '! python3 "$REPLAY" run "$task" "$WORK/dry" --model none --runs 0 >/dev/null 2>&1' "accepted"
 
 echo "run"

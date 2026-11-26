@@ -334,7 +334,14 @@ def cmd_run(a):
         with tempfile.TemporaryDirectory() as tmp:
             config_dir(Path(tmp) / "c", skills_dir)
             loaded = {"dir": str(skills_dir), "names": names, "digest": digest(Path(tmp) / "c" / "skills")}
-    version = sh([os.environ.get("CLAUDE_BIN", "claude"), "--version"], check=False).stdout.strip()
+    claude = os.environ.get("CLAUDE_BIN", "claude")
+    if not shutil.which(claude):
+        if a.runs > 0:
+            shutil.rmtree(label_dir)
+            sys.exit(f"{claude} not found: the runs need the claude CLI on PATH (or CLAUDE_BIN)")
+        version = "claude not found"
+    else:
+        version = sh([claude, "--version"], check=False).stdout.strip()
     (label_dir / "run.json").write_text(json.dumps(
         {"task": task["id"], "pr": task.get("pr"), "model": a.model, "runs": a.runs,
          "arms": arms, "claude_version": version, "skills": loaded,
