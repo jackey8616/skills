@@ -1,0 +1,9 @@
+schema_version: "1.1"
+name: recurrence-escalates
+expected_outcome: |
+  deviations.md already records this deviation, fixed last time by rewording
+  step 1. The run treats it as a recurrence: it adds to that entry instead of
+  writing a second one, and picks a stronger fix than wording, a stop or a
+  script.
+context:
+  scaffold_script: place-files.sh

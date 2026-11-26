@@ -6,6 +6,7 @@ Tests are offline. Run the one for whatever you changed, and `python3 lint-skill
 - `bash lint-skills.test.sh` — `lint-skills.py`. Needs PyYAML (`pip install pyyaml`); only for working on this repo, since `install.sh` doesn't install it. It checks frontmatter, `agents/openai.yaml`, invocation set the same way in both, a README row per skill, the paths SKILL.md points at, and that every test sits where Layout says and is listed here. Its docstring lists each check. Description phrasing is checked only for the words "use when".
 - `bash skills/codex-review/tests/detect.test.sh` — `skills/codex-review/scripts/detect.sh`
 - `bash skills/deepen/tests/evals.test.sh` — the cases in `skills/deepen/tests/evals/`: that each loads, and that its prompt fits its case
+- `bash skills/skill-deviation-eliminator/tests/evals.test.sh` — the cases in `skills/skill-deviation-eliminator/tests/evals/`: that each loads, that its fixture holds the failing app and the skills source its case says, and that each post-check passes and fails where it should
 - `bash skills/skills-audit/tests/scripts.test.sh` — `skills/skills-audit/scripts/prepare.py`, `collect.py`, `check-evals.py`, and `find-skill-creator.sh`
 - `bash skills/test-first-code-review/tests/evals.test.sh` — the cases in `skills/test-first-code-review/tests/evals/`: that each loads, and that its fixture's tests pass and fail where the case says
 - `bash skills/setup-annotation-guard/tests/tidy.test.sh` — `skills/setup-annotation-guard/scripts/tidy.py`
