@@ -47,7 +47,7 @@ test_at() {
     git -C "$1" show "$2^2:test_minutes.py" > "$t/test_minutes.py"
   (cd "$t" && python3 -m unittest -q test_minutes >/dev/null 2>&1)
   local r=$?
-  git -C "$1" worktree remove -q --force "$t"
+  git -C "$1" worktree remove --force "$t"
   return $r
 }
 
