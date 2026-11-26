@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: empty-arguments-asks
+expected_outcome: |
+  The user names no repo and no PRs. The skill asks which repo and which PRs
+  to replay, and does nothing else: no setup checks, no search for a repo, no
+  guess at one.

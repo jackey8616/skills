@@ -15,20 +15,7 @@ disable-model-invocation: true
 ## 1. Set up
 
 - **The base directory**, `<base>`: your scratchpad, or a temp directory, never inside a repository. Every run has its own project copy and config directory, and they fill it.
-- **skill-creator**: grading and the blind comparison are its agents. Find it with skills-audit's finder, which installs with this skill:
-
-  ```bash
-  bash "${CLAUDE_SKILL_DIR}/../skills-audit/scripts/find-skill-creator.sh"
-  ```
-
-  It prints skill-creator's directory, `<sc>` from here on. Nothing printed → tell the user this needs skill-creator installed, or `SKILL_CREATOR=<dir>`, and stop.
-- `replay.py` needs PyYAML (`pip install pyyaml`), git, and the `claude` CLI. Check that a run can sign in without the user's config:
-
-  ```bash
-  python3 "${CLAUDE_SKILL_DIR}/scripts/replay.py" doctor --live
-  ```
-
-  Not ready → pass on what it printed and stop. It's one tiny billed call.
+- `replay.py` needs PyYAML (`pip install pyyaml`), git, and the `claude` CLI: `python3 "${CLAUDE_SKILL_DIR}/scripts/replay.py" doctor` checks they're there. Missing → say what, and stop.
 
 ## 2. Task files
 
@@ -61,6 +48,23 @@ python3 "${CLAUDE_SKILL_DIR}/scripts/replay.py" summarize <base>/dry/<task-id>/*
 ## 4. Run
 
 Count first: PRs × models × arms × runs model runs, each a full agent session of up to `max_turns`, plus two grader calls per run (section 5). Tell the user the count and wait for their OK.
+
+Then, before the first run, two checks that sections 2 and 3 didn't need:
+
+- **skill-creator**: grading and the blind comparison are its agents. Find it with skills-audit's finder, which installs with this skill:
+
+  ```bash
+  bash "${CLAUDE_SKILL_DIR}/../skills-audit/scripts/find-skill-creator.sh"
+  ```
+
+  It prints skill-creator's directory, `<sc>` from here on. Nothing printed → tell the user this needs skill-creator installed, or `SKILL_CREATOR=<dir>`, and stop.
+- **Sign-in**: a run can't use the user's config, so check it can sign in without it. It's one tiny billed call:
+
+  ```bash
+  python3 "${CLAUDE_SKILL_DIR}/scripts/replay.py" doctor --live
+  ```
+
+  Not ready → pass on what it printed and stop.
 
 One command per PR and model, in the background:
 

@@ -122,6 +122,7 @@ check "hidden tests fail on the base" 'python3 -c "import json,sys; sys.exit(jso
 check "the original PR passes them" 'python3 -c "import json,sys; c=json.load(open(\"$d/reference/checks.json\")); sys.exit(not (c[\"hidden_tests\"][\"passed\"] and c[\"checks\"][0][\"passed\"]))"' "$(cat "$d/reference/checks.json")"
 check "the reference diff is the PR" 'grep -q "+echo \$(( \$1 + \$2 ))" "$d/reference/changes.diff" && grep -q test_add.sh "$d/reference/changes.diff"' "$(cat "$d/reference/changes.diff")"
 check "setup is not in the reference diff" '! grep -q setup-ran "$d/reference/changes.diff"' "$(cat "$d/reference/changes.diff")"
+check "a dry summary has no arm rows" '! python3 "$REPLAY" summarize "$d" | grep -qE "^\| (plain|skill) "' "$(python3 "$REPLAY" summarize "$d")"
 check "a second run to the same label is refused" '! python3 "$REPLAY" run "$task" "$WORK/dry" --model none --runs 0 >/dev/null 2>&1' "accepted"
 
 echo "run"

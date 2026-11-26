@@ -387,6 +387,8 @@ def cmd_summarize(a):
         arms = info.get("arms") or sorted(p.name for p in d.iterdir() if p.is_dir() and p.name not in ("reference", ".keys"))
         for arm in arms:
             runs = sorted((d / arm).glob("run-*"))
+            if not runs:
+                continue
             metas = [read(r / "meta.json") or {} for r in runs]
             checks = [read(r / "checks.json") for r in runs]
             wins = {"run": 0, "tie": 0, "pr": 0}

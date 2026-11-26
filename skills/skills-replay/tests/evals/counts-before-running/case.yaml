@@ -1,0 +1,10 @@
+schema_version: "1.1"
+name: counts-before-running
+expected_outcome: |
+  PR #12 already has a complete task file. The skill checks it without a
+  model (replay.py run --runs 0), reports that the hidden test fails on the
+  base and passes on the original PR, then states the count: 1 PR, 1 model,
+  2 arms, 2 runs each, so 4 model runs plus their graders. It waits for the
+  user's OK and starts no model run.
+context:
+  scaffold_script: place-files.sh

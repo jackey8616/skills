@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+# Offline checks for the behaviour evals in tests/evals/. The evals are billed
+# model runs (see CLAUDE.md); this runs no model. It checks every case is in
+# the shape `claude plugin eval` loads (skills-audit's check-evals.py), and
+# that each case's prompt and fixture are what the case says: no arguments
+# for the empty-arguments case; for the other two, PR #12 as a merge whose
+# second parent brings test_minutes.py, which fails on the first parent and
+# passes on the second, with no prompt left anywhere in the repo for the
+# case that must ask for it, and a task file that passes the dry check for
+# the case that must count.
+#
+#   bash skills/skills-replay/tests/evals.test.sh
+set -uo pipefail
+
+TESTS="$(cd "$(dirname "$0")" && pwd)"
+EVALS="$TESTS/evals"
+REPLAY="$TESTS/../scripts/replay.py"
+WORK="$(mktemp -d)"
+trap 'rm -rf "$WORK"' EXIT
+
+pass=0
+fail=0
+ok()   { pass=$((pass + 1)); echo "  ok   $1"; }
+bad()  { fail=$((fail + 1)); echo "  FAIL $1 — got: $2"; }
+check() { if eval "$2"; then ok "$1"; else bad "$1" "$3"; fi; }
+
+echo "format"
+while IFS='|' read -r verdict name why; do
+  if [ "$verdict" = ok ]; then ok "$name"; else bad "$name" "$why"; fi
+done < <(python3 "$TESTS/../../skills-audit/scripts/check-evals.py" "$(dirname "$TESTS")")
+
+prompt_of() {
+  python3 -c 'import re,sys; print(re.match(r"---\n.*?\n---\n(.*)", open(sys.argv[1]).read(), re.S).group(1).strip())' \
+    "$EVALS/$1/prompt.md"
+}
+
+# build <case> — run its scaffold in a fresh project dir, as a run would; prints the dir.
+build() {
+  local p="$WORK/$1/r/x/project"
+  mkdir -p "$p" && (cd "$p" && bash "$EVALS/$1/place-files.sh") >/dev/null 2>&1 && echo "$p"
+}
+
+# test_at <dir> <merge> <rev> — whether the merge's test_minutes.py passes at <rev>.
+test_at() {
+  local t="$WORK/t-$RANDOM"
+  git -C "$1" worktree add -q --detach "$t" "$3" &&
+    git -C "$1" show "$2^2:test_minutes.py" > "$t/test_minutes.py"
+  (cd "$t" && python3 -m unittest -q test_minutes >/dev/null 2>&1)
+  local r=$?
+  git -C "$1" worktree remove -q --force "$t"
+  return $r
+}
+
+pr_premises() {
+  local c="$1" p="$2"
+  local merge
+  merge=$(git -C "$p" log --merges --format=%H -1)
+  check "$c: PR #12 is a merge" '[ -n "$merge" ] && git -C "$p" log -1 --format=%s "$merge" | grep -q "pull request #12"' "$(git -C "$p" log --oneline)"
+  check "$c: its second parent brings test_minutes.py" '[ "$(git -C "$p" diff --name-only "$merge^1" "$merge^2" | sort | tr "\n" " ")" = "duration.py test_minutes.py " ]' "$(git -C "$p" diff --name-only "$merge^1" "$merge^2")"
+  check "$c: the test fails on the base" '! test_at "$p" "$merge" "$merge^1"' "passes"
+  check "$c: the test passes on the head" 'test_at "$p" "$merge" "$merge^2"' "fails"
+  check "$c: no remote to ask" '[ -z "$(git -C "$p" remote)" ]' "$(git -C "$p" remote)"
+  check "$c: the tree is clean" '[ -z "$(git -C "$p" status --porcelain)" ]' "$(git -C "$p" status --porcelain)"
+}
+
+echo "cases"
+for case_dir in "$EVALS"/*/; do
+  c="$(basename "$case_dir")"
+  case "$c" in results | benchmarks | mocks) continue ;; esac
+  prompt="$(prompt_of "$c")"
+  case "$c" in
+    empty-arguments-asks)
+      check "$c: /skills-replay with no arguments" '[ "$prompt" = /skills-replay ]' "$prompt" ;;
+    asks-for-original-prompt)
+      check "$c: PR 12, one model" '[ "$prompt" = "/skills-replay . 12 --model claude-haiku-4-5" ]' "$prompt"
+      p="$(build "$c")" || { bad "$c: fixture builds" "scaffold failed"; continue; }
+      pr_premises "$c" "$p"
+      check "$c: no task file" '[ ! -e "$p/.skills-replay" ]' "$(ls -A "$p")"
+      check "$c: no Claude-Session trailer or prompt in history" '! git -C "$p" log --format=%B | grep -qiE "claude-session|prompt"' "$(git -C "$p" log --format=%B)" ;;
+    counts-before-running)
+      check "$c: PR 12, one model, 2 runs" '[ "$prompt" = "/skills-replay . 12 --model claude-haiku-4-5 --runs 2" ]' "$prompt"
+      p="$(build "$c")" || { bad "$c: fixture builds" "scaffold failed"; continue; }
+      pr_premises "$c" "$p"
+      task="$p/.skills-replay/app-pr12/task.yaml"
+      check "$c: the task file is committed" '[ -f "$task" ] && git -C "$p" ls-files --error-unmatch "$task" >/dev/null 2>&1' "missing"
+      check "$c: the task's skill repo exists" '[ -f "$WORK/$c/r/x/skills-src/skills/tdd-fix/SKILL.md" ]' "missing"
+      if python3 "$REPLAY" run "$task" "$WORK/$c/dry" --model none --runs 0 >/dev/null 2>&1; then
+        s="$(python3 "$REPLAY" summarize "$WORK/$c/dry/app-pr12/"*)"
+        check "$c: the dry check passes the original PR" 'echo "$s" | grep -qF "| original PR | 1/1 | 1/1 |"' "$s"
+        check "$c: the dry check raises no warning" '! echo "$s" | grep -q "^- "' "$s"
+      else
+        bad "$c: the dry check runs" "replay.py run --runs 0 failed"
+      fi ;;
+    *)
+      bad "$c: has a premise check here" "add one for this case" ;;
+  esac
+done
+
+echo
+echo "$pass passed, $fail failed"
+[ "$fail" -eq 0 ]
