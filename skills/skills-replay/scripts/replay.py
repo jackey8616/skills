@@ -172,7 +172,8 @@ def digest(d):
 
 
 def skill_names(d):
-    return sorted(str(f.parent.relative_to(d)) for f in d.rglob("SKILL.md"))
+    """The skills Claude Code loads from a skills dir: <name>/SKILL.md, one level down."""
+    return sorted(f.parent.name for f in d.glob("*/SKILL.md"))
 
 
 def config_dir(dest, skills_dir):

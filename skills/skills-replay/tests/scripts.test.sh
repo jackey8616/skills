@@ -39,6 +39,8 @@ git -C "$repo" remote add origin https://example.invalid/app.git
 # The user's installed skills: two, one with tests the runs must not get.
 home="$WORK/home"
 mkdir -p "$home/.claude/skills/widget/tests" "$home/.claude/skills/gadget"
+mkdir -p "$home/.claude/skills/bundle/nested"
+echo 'not loaded' > "$home/.claude/skills/bundle/nested/SKILL.md"
 echo 'widget v1' > "$home/.claude/skills/widget/SKILL.md"
 echo 'secret case' > "$home/.claude/skills/widget/tests/case.md"
 echo 'gadget' > "$home/.claude/skills/gadget/SKILL.md"
