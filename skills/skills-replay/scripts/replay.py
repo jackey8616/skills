@@ -32,8 +32,9 @@ Every run starts from a fresh copy of the base commit: one commit of history,
 no remote, no .skills-replay/, .claude/skills/ or .agents/skills/. Its
 CLAUDE_CONFIG_DIR is empty but for the arm's skills, so the user's own skills
 don't load, and no MCP server starts. `plain` gets no skills and the task's
-plain_prompt; `skill` gets the task's skills at their recorded refs (or at
---skill-ref, as arm `skill@REF`) and the prompt as it was typed.
+plain_prompt; `skill` gets the task's skills and the prompt as it was typed.
+A skill is the user's installed copy unless the task names its `repo` (and
+`ref`); --skill-ref reads every skill from its repo at REF, as arm `skill@REF`.
 
 `summarize` reads label dirs, with any grading.json and compare/comparison.json
 the graders wrote, and prints a Markdown report. Set CLAUDE_BIN to use another
@@ -42,6 +43,7 @@ claude binary (the tests use a fake one).
 import argparse
 import concurrent.futures
 import datetime
+import hashlib
 import json
 import os
 import random
@@ -160,19 +162,62 @@ def one_check(name, cmd, cwd):
         return {"name": name, "passed": False, "exit": None, "tail": f"timed out after {CHECK_TIMEOUT}s"}
 
 
+def installed_skill(name):
+    """The user's installed copy of a skill, where Claude Code or Codex installs skills."""
+    for rel in (".claude/skills", ".agents/skills"):
+        d = Path.home() / rel / name
+        if (d / "SKILL.md").is_file():
+            return d
+    return None
+
+
+def check_skills(skills, ref_override):
+    """Refuse a task whose skills can't be found, before anything runs."""
+    for s in skills:
+        if s.get("repo"):
+            src = Path(s["repo"]).expanduser()
+            ref = ref_override or s.get("ref") or "HEAD"
+            if git(src, "cat-file", "-e", f"{ref}^{{commit}}", check=False).returncode:
+                sys.exit(f"skill {s['name']}: no commit {ref} in {src}")
+        elif ref_override or s.get("ref"):
+            sys.exit(f"skill {s['name']}: a ref needs `repo`, the skills repo to read it from")
+        elif not installed_skill(s["name"]):
+            sys.exit(f"skill {s['name']}: not installed in ~/.claude/skills or ~/.agents/skills; "
+                     "install it, or give `repo` (and `ref`)")
+
+
+def digest(d):
+    h = hashlib.sha256()
+    for f in sorted(p for p in d.rglob("*") if p.is_file()):
+        h.update(str(f.relative_to(d)).encode() + b"\0" + f.read_bytes() + b"\0")
+    return h.hexdigest()[:12]
+
+
 def config_dir(dest, skills, ref_override):
-    """An empty CLAUDE_CONFIG_DIR holding only these skills, each read from its repo at its ref."""
+    """An empty CLAUDE_CONFIG_DIR holding only these skills.
+
+    A skill with `repo` is read from that repo at its `ref` (HEAD if none);
+    one without is the user's installed copy. Either way the result records
+    a digest of what was loaded, so results from two dates can tell whether
+    the skill changed between them."""
     (dest / "skills").mkdir(parents=True)
     used = []
     for s in skills:
-        ref = ref_override or s["ref"]
-        src = Path(s["repo"]).expanduser()
-        path = s.get("path", f"skills/{s['name']}")
-        archive = subprocess.run(["git", "-C", str(src), "archive", ref, path], check=True, capture_output=True)
-        with tempfile.TemporaryDirectory() as tmp:
-            subprocess.run(["tar", "-x", "-C", tmp], input=archive.stdout, check=True)
-            shutil.copytree(Path(tmp) / path, dest / "skills" / s["name"], ignore=shutil.ignore_patterns("tests"))
-        used.append({"name": s["name"], "ref": git(src, "rev-parse", "--short", ref).stdout.strip()})
+        target = dest / "skills" / s["name"]
+        if s.get("repo"):
+            src = Path(s["repo"]).expanduser()
+            ref = ref_override or s.get("ref") or "HEAD"
+            path = s.get("path", f"skills/{s['name']}")
+            archive = subprocess.run(["git", "-C", str(src), "archive", ref, path], check=True, capture_output=True)
+            with tempfile.TemporaryDirectory() as tmp:
+                subprocess.run(["tar", "-x", "-C", tmp], input=archive.stdout, check=True)
+                shutil.copytree(Path(tmp) / path, target, ignore=shutil.ignore_patterns("tests"))
+            entry = {"name": s["name"], "ref": git(src, "rev-parse", "--short", ref).stdout.strip()}
+        else:
+            shutil.copytree(installed_skill(s["name"]), target, ignore=shutil.ignore_patterns("tests"))
+            entry = {"name": s["name"], "ref": "installed"}
+        entry["digest"] = digest(target)
+        used.append(entry)
     return used
 
 
@@ -293,6 +338,8 @@ def cmd_run(a):
     arms = [x.strip() for x in a.arms.split(",") if x.strip()]
     if "skill" in arms and not task["skills"]:
         sys.exit("arm `skill` needs `skills` in the task file")
+    if "skill" in arms:
+        check_skills(task["skills"], a.skill_ref)
     arm_names = {arm: (f"skill@{a.skill_ref}" if arm == "skill" and a.skill_ref else arm) for arm in arms}
     version = sh([os.environ.get("CLAUDE_BIN", "claude"), "--version"], check=False).stdout.strip()
     (label_dir / "run.json").write_text(json.dumps(
@@ -371,6 +418,14 @@ def cmd_summarize(a):
         print(f"## {info.get('task')} — {info.get('model')}\n")
         print(f"PR #{info.get('pr')}, merged {info.get('merged_at') or '?'}. {info.get('claude_version')}. "
               f"{info.get('runs')} run(s) per arm.\n")
+        loaded = {}
+        for m in (read(r) for r in sorted(d.glob("*/run-*/meta.json"))):
+            for sk in (m or {}).get("skills") or []:
+                loaded.setdefault((m["arm"], sk["name"]), set()).add(f"{sk['ref']}, digest {sk.get('digest', '?')}")
+        for (arm, name), versions in sorted(loaded.items()):
+            print(f"- `{arm}` loaded {name}: {'; '.join(sorted(versions))}")
+        if loaded:
+            print()
         warnings = []
         if (base_check.get("hidden_tests") or {}).get("passed"):
             warnings.append("The hidden tests already pass on the base commit, so they can't tell a fix from no change.")

@@ -146,7 +146,7 @@ check "the model is passed exactly" 'grep -q "^claude-test-1$" "$plain_log/argv"
 check "skill run passes the hidden tests" 'python3 -c "import json,sys; sys.exit(not json.load(open(\"$d/skill/run-1/checks.json\"))[\"hidden_tests\"][\"passed\"])"' "$(cat "$d/skill/run-1/checks.json")"
 check "plain run fails them" 'python3 -c "import json,sys; sys.exit(json.load(open(\"$d/plain/run-1/checks.json\"))[\"hidden_tests\"][\"passed\"])"' "$(cat "$d/plain/run-1/checks.json")"
 check "the skill run's diff is its change alone" 'grep -q "+echo \$(( \$1 + \$2 ))" "$d/skill/run-1/changes.diff" && ! grep -q test_add.sh "$d/skill/run-1/changes.diff"' "$(cat "$d/skill/run-1/changes.diff")"
-check "meta records cost, turns, the ref" 'python3 -c "import json,sys; m=json.load(open(\"$d/skill/run-1/meta.json\")); sys.exit(not (m[\"cost_usd\"]==0.5 and m[\"turns\"]==3 and m[\"skills\"]==[{\"name\":\"widget\",\"ref\":\"$v1\"}] and m[\"changed\"]))"' "$(cat "$d/skill/run-1/meta.json")"
+check "meta records cost, turns, the ref" 'python3 -c "import json,sys; m=json.load(open(\"$d/skill/run-1/meta.json\")); sys.exit(not (m[\"cost_usd\"]==0.5 and m[\"turns\"]==3 and [(x[\"name\"], x[\"ref\"]) for x in m[\"skills\"]]==[(\"widget\", \"$v1\")] and len(m[\"skills\"][0][\"digest\"])==12 and m[\"changed\"]))"' "$(cat "$d/skill/run-1/meta.json")"
 check "a plain run reaching for the PR is flagged" 'grep -q "gh (pr|api)" "$d/plain/run-1/meta.json"' "$(cat "$d/plain/run-1/meta.json")"
 check "a refused call is not flagged" '! grep -q "git (fetch" "$d/plain/run-1/meta.json"' "$(cat "$d/plain/run-1/meta.json")"
 check "the skill run is not flagged" 'python3 -c "import json,sys; sys.exit(bool(json.load(open(\"$d/skill/run-1/meta.json\"))[\"leaks\"]))"' "$(cat "$d/skill/run-1/meta.json")"
@@ -175,6 +175,39 @@ d="$WORK/r/app-pr7/$(date +%F)-m"
 check "the arm is named skill@REF" '[ -f "$d/skill@$v2/run-1/meta.json" ] && [ ! -e "$d/plain" ]' "$(ls "$d")"
 check "it loads the skill at that ref" 'grep -q "\"ref\": \"$v2\"" "$d/skill@$v2/run-1/meta.json"' "$(cat "$d/skill@$v2/run-1/meta.json")"
 check "summarize finds the arm" 'python3 "$REPLAY" summarize "$d" | grep -qF "| skill@$v2 | 1/1 |"' "$(python3 "$REPLAY" summarize "$d")"
+
+echo "installed skill"
+home="$WORK/home"
+mkdir -p "$home/.claude/skills/widget/tests"
+echo 'installed' > "$home/.claude/skills/widget/SKILL.md"
+echo 'secret case' > "$home/.claude/skills/widget/tests/case.md"
+inst="$repo/.skills-replay/app-pr7/installed.yaml"
+python3 - "$task" "$inst" <<'PY'
+import sys, yaml
+t = yaml.safe_load(open(sys.argv[1]))
+t["skills"] = [{"name": "widget"}]
+yaml.safe_dump(t, open(sys.argv[2], "w"))
+PY
+rm -rf "$log"/*
+HOME="$home" python3 "$REPLAY" run "$inst" "$WORK/i" --model m --runs 1 --arms skill >/dev/null 2>&1
+d="$WORK/i/app-pr7/$(date +%F)-m"
+inst_log=$(dirname "$(ls "$log"/*/argv | head -1)")
+check "a skill without repo is the installed copy" '[ "$(cat "$inst_log/widget-version" 2>/dev/null)" = installed ]' "$(cat "$inst_log/widget-version" 2>/dev/null)"
+check "the installed copy comes without its tests" '! grep -q tests "$inst_log/widget"' "$(cat "$inst_log/widget")"
+check "meta records it as installed, with a digest" 'python3 -c "import json,sys; m=json.load(open(\"$d/skill/run-1/meta.json\")); s=m[\"skills\"][0]; sys.exit(not (s[\"ref\"]==\"installed\" and len(s[\"digest\"])==12))"' "$(cat "$d/skill/run-1/meta.json")"
+s=$(python3 "$REPLAY" summarize "$d")
+check "the summary names the loaded version" 'echo "$s" | grep -q "^- \`skill\` loaded widget: installed, digest [0-9a-f]\{12\}$"' "$s"
+echo 'v2' > "$home/.claude/skills/widget/SKILL.md"
+HOME="$home" python3 "$REPLAY" run "$inst" "$WORK/i2" --model m --runs 1 --arms skill >/dev/null 2>&1
+d2="$WORK/i2/app-pr7/$(date +%F)-m"
+check "an edited skill gets another digest" '[ "$(python3 -c "import json; print(json.load(open(\"$d/skill/run-1/meta.json\"))[\"skills\"][0][\"digest\"])")" != "$(python3 -c "import json; print(json.load(open(\"$d2/skill/run-1/meta.json\"))[\"skills\"][0][\"digest\"])")" ]' "same digest"
+out=$(HOME="$WORK/nohome" python3 "$REPLAY" run "$inst" "$WORK/i3" --model m --runs 1 --arms skill 2>&1); code=$?
+check "a skill that isn't installed is refused before running" '[ "$code" -ne 0 ] && echo "$out" | grep -q "not installed" && [ ! -e "$WORK/i3/app-pr7/$(date +%F)-m/skill" ]' "$out"
+out=$(HOME="$home" python3 "$REPLAY" run "$inst" "$WORK/i4" --model m --runs 1 --arms skill --skill-ref main 2>&1); code=$?
+check "--skill-ref without repo is refused" '[ "$code" -ne 0 ] && echo "$out" | grep -q "a ref needs .repo."' "$out"
+sed "s/ref: $v1/ref: deadbeef/" "$task" > "$repo/.skills-replay/app-pr7/bad-ref.yaml"
+out=$(python3 "$REPLAY" run "$repo/.skills-replay/app-pr7/bad-ref.yaml" "$WORK/i5" --model m --runs 1 --arms skill 2>&1); code=$?
+check "a ref the skills repo lacks is refused" '[ "$code" -ne 0 ] && echo "$out" | grep -q "no commit deadbeef"' "$out"
 
 echo "bad tasks"
 sed '/^test_command/d' "$task" > "$repo/.skills-replay/app-pr7/no-test.yaml"

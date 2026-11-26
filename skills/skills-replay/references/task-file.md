@@ -12,10 +12,10 @@ prompt: |                    # what the user typed, exactly, slash command and a
   /test-first-code-review the retry fix on this branch
 plain_prompt: |              # the same request for an agent without the skill
   Review the retry fix on this branch: run its tests first, then read the code.
-skills:                      # what the `skill` arm loads
+skills:                      # what the `skill` arm loads: the installed copy
   - name: test-first-code-review
-    repo: ~/src/skills       # a local clone of the skills repo
-    ref: 1a2b3c4             # the skills repo's commit the PR was made with
+  #  repo: ~/src/skills      # optional: read it from a skills repo instead
+  #  ref: 1a2b3c4            # optional, with repo: at this commit (default HEAD)
 setup:                       # run in each snapshot before the model starts
   - npm ci
 hidden_tests:                # test files the PR added or changed
@@ -56,7 +56,9 @@ A session that took several user turns can't be replayed from its first message 
 
 **plain_prompt.** Needed when `prompt` starts with a slash command: the plain arm has no such command, and the CLI would answer "unknown skill" and stop. Keep the request and its arguments, and say in plain words what the user wanted done, not how the skill does it. "Review the retry fix" is the user's task; "run its tests first, then read the code" is the skill's method. Leave the method out unless the user's own words held it, so the plain arm isn't handed the skill in disguise. Show the user both prompts before running.
 
-**skills.** The skill the PR was made with, at the commit of the skills repo that was installed then. An install copies `main`, so take `git -C <skills> log -1 --format=%h --before=<the PR's first commit date> main`, unless the user knows better.
+**skills.** The skill the PR was made with, by name. The `skill` arm loads the user's installed copy, from `~/.claude/skills/<name>` or `~/.agents/skills/<name>`, so the replay measures the skill they use today. Each run's `meta.json` records a digest of the files it loaded.
+
+Pin a version only when the user wants one: `repo`, a local clone of the skills repo, and `ref`, a commit in it. For the version a PR was made with, an install copies `main`, so `git -C <skills> log -1 --format=%h --before=<the PR's first commit date> main` is a fair guess. `--skill-ref` overrides `ref` for every skill, and needs `repo`.
 
 **hidden_tests and test_command.** The test files in `gh pr view --json files` that the PR added or changed. `test_command` runs them and nothing slow. `replay.py` overlays them from `head` after each run, so a run is graded on the PR's own tests whether it wrote tests or not. They should fail on the base and pass on `head`: `base-check.json` and the reference row of the report show both. A PR with no tests can still be replayed. Set `test_command` to the suite the repo already has, and lean on `rubric`.
 

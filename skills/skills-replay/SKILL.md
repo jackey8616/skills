@@ -6,11 +6,11 @@ disable-model-invocation: true
 
 # Skills replay
 
-`/skills-audit` asks whether a model follows a skill's rules, on small cases written for those rules. This asks the question it can't: on real work, is the result better with the skill, and does a new model still need it? It takes PRs that were made with a skill and goes back to where each began: the base commit, the user's original prompt, no history after it. Then it runs the task again on the model you name, once with nothing loaded (`plain`) and once with the skill as it was then (`skill`), and grades both, and the original PR, on the same evidence.
+`/skills-audit` asks whether a model follows a skill's rules, on small cases written for those rules. This asks the question it can't: on real work, is the result better with the skill, and does a new model still need it? It takes PRs that were made with a skill and goes back to where each began: the base commit, the user's original prompt, no history after it. Then it runs the task again on the model you name, once with nothing loaded (`plain`) and once with the skill as you have it installed (`skill`), and grades both, and the original PR, on the same evidence.
 
 `$ARGUMENTS`: the repo (a path to a local clone) and its PR numbers, or paths to task files, then `--model <model> [<model>…]`, optionally `--runs <n>` (default 3) and `--skill-ref <ref>`. Empty → ask which repo and PRs. Do nothing else first.
 
-`--skill-ref` runs the `skill` arm at another commit of the skills repo, `main` for instance, as an arm named `skill@<ref>`. It answers "is today's version of the skill better than the one the PR was made with?". Without it the arm uses the ref recorded in each task file.
+The `skill` arm loads the user's installed copy of each skill, the version they use today, so the question is whether *that* still pays. Each run records a digest of what it loaded, and the report prints it: two dates with different digests had different skills as well as different models. To pin a version instead, the task file names the skills repo and a commit (`references/task-file.md`). `--skill-ref <ref>` reads every skill from its repo at that commit, as an arm named `skill@<ref>`, for instance to see whether the skill's changes since the PR helped.
 
 ## 1. Set up
 
@@ -25,7 +25,7 @@ Each PR needs `<repo>/.skills-replay/<repo>-pr<N>/task.yaml`. One exists → rea
 - **plain_prompt**: the same request with no slash command, when the prompt starts with one. It states what the user wanted, not the skill's method. A plain prompt that spells out the skill's steps hands the plain arm the skill, and the comparison then shows nothing.
 - **hidden_tests** and **test_command**: the PR's own tests, and the command that runs them.
 - **rubric**: 3–6 things the change had to get right, from the PR's description and review comments.
-- **skills**: which skill the PR was made with, the user's clone of the skills repo, and its commit then. The PR rarely says, so ask unless the session does.
+- **skills**: which skill the PR was made with, by name. The PR rarely says, so ask unless the session does. The name is enough: the arm loads the installed copy. Don't ask for a version unless the user wants one pinned.
 
 Show the five together, per PR, with where each came from. A PR whose session took several user turns: ask whether to fold the turns into one prompt or drop the PR. A replay of the first message alone grades the model on a task the user never gave it.
 
@@ -120,7 +120,8 @@ Read the gap between the arms, not either score alone:
 - **skill ≈ plain, on most PRs** → the model now does unaided what the skill taught. The skill is a candidate to cut down or retire. One PR can't show this: several can.
 - **skill below plain** → the skill gets in the way now. The transcripts show which instruction: a step the model would have skipped, a check it now makes anyway.
 - **both below the original PR** → the new model is worse at this task, or the original needed the user's steering in later turns. The transcript of the original session settles which.
-- **`skill@main` against `skill`** → whether the skill's changes since the PR helped.
+- **`skill@<ref>` against `skill`** → whether the skill's changes between that commit and today helped.
+- **The digest changed between two dates** → the skill changed as well as the model. Read the gap against that, or pin the version and replay again.
 
 Before you put a change down to the model, read that PR's runs: a leak, a flaky test, or a broken `setup` looks the same in a score. Leave runs with leaks out of the comparison and say how many.
 
