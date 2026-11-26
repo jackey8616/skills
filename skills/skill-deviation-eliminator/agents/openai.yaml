@@ -1,0 +1,3 @@
+interface:
+  display_name: "Skill Deviation Eliminator"
+  short_description: "Land a fix when a run strays from a skill's SOP"
