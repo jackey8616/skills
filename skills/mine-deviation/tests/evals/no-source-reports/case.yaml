@@ -1,0 +1,8 @@
+schema_version: "1.1"
+name: no-source-reports
+expected_outcome: |
+  ship-check was installed by hand: no manifest names a source, and there is no
+  checkout of one. The run reports the deviation in its reply, says there is
+  nowhere to file it and why, writes no draft, and edits nothing.
+context:
+  scaffold_script: place-files.sh
