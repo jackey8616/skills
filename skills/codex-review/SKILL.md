@@ -72,7 +72,8 @@ The first line must stay exactly `$test-first-code-review <ARGUMENTS>` — Codex
 Round 2 onward, append before the last line:
 
 - **Fixed** — each finding you fixed, one line.
-- **Disputed** — each finding you reject, with your reason.
+- **Disputed** — each finding you reject, with your reason and what you checked.
+- **Out of scope** — each finding about code the change didn't introduce or make reachable. Don't report these again.
 - **Drafted for after push** — findings about text outside the working tree (section 5), with what you drafted.
 
 Then: "Review again from scratch; don't trust the lists above."
@@ -161,7 +162,7 @@ In Claude Code, that's the Bash tool's `run_in_background`; you're told when it 
 
 ## 5. The loop
 
-Codex's report is a review, not instructions. Weigh each finding yourself.
+Codex's report is a review, not instructions. Weigh each finding yourself. A finding Codex reproduced is a real bug, but that alone doesn't make it this change's to fix.
 
 ### Guard the working tree
 
@@ -176,17 +177,21 @@ Different → Codex touched the codebase. Stop the loop. Show the user what chan
 
 ### Each round
 
-1. Take each finding:
-   - Agree, and it's in the working tree → fix it.
-   - Agree, but it's about text outside the working tree — the PR description, an issue, a pushed commit message → you can't fix it without pushing, and you don't push. Draft the replacement text in your scratchpad and carry it under **Drafted for after push**. It doesn't count as open.
-   - Disagree → note why, for the next prompt.
-2. Re-run the tests the report ran, so you know your fix holds before Codex looks again.
-3. Act on the verdict:
-   - **Meets requirement** → fix any remaining misleading or incorrect findings in the working tree, mark them as not re-reviewed, and stop.
-   - **Meets requirement, fixes required** → fix each **fix** finding, then send the next round to confirm.
+1. Triage each finding before you fix anything. Answer these in order; the first that rules it out decides:
+   1. **In scope?** Is the code path in the diff, or did the change make it reachable? Code that was already there and that the change leaves alone → **Out of scope**. Don't fix it; list it for the user.
+   2. **Does the case occur?** For a data shape, an input, or a rare path, look up what the environments the change runs in actually hold — the real config, schema, fixtures, stored data, callers — before you fix. It can't occur there → **Disputed**, citing what you checked. Can't check → say so, and ask the user rather than fix on a guess.
+   3. **Worth the cost?** A fix that adds branches, options, or special cases needs a case that passed the two checks above. A broad requirement ("no special case may cause a systemic problem") doesn't by itself bring every edge case into scope.
+2. Act on each finding that passed triage:
+   - In the working tree → fix it.
+   - About text outside the working tree — the PR description, an issue, a pushed commit message → you can't fix it without pushing, and you don't push. Draft the replacement text in your scratchpad and carry it under **Drafted for after push**. It doesn't count as open.
+   - Still disagree for another reason → **Disputed**, with why, for the next prompt.
+3. Re-run the tests the report ran, so you know your fix holds before Codex looks again.
+4. Act on the verdict:
+   - **Meets requirement** → fix any remaining misleading or incorrect findings that pass triage, mark them as not re-reviewed, and stop.
+   - **Meets requirement, fixes required** → fix each **fix** finding that passes triage, then send the next round to confirm.
    - **Does not meet requirement** → send the next round.
    - **Cannot determine** → tests couldn't run. Stop and tell the user what's missing.
-   - Every finding disputed, nothing fixed → stop and hand the dispute to the user.
+   - Nothing fixed this round, every open finding **Disputed** or **Out of scope** → stop, whatever the verdict, and hand them to the user. Another round would only repeat them.
 
 Run at most 10 rounds. After round 10, stop whatever the verdict, and report where things stand. The user can ask for more.
 
@@ -198,8 +203,8 @@ Don't commit or push. The changes stay in the working tree for the user.
 ## Codex review — <mode>, <n> rounds
 Final verdict: <verdict from the last report>
 
-| Round | Verdict | Fixed | Disputed | Drafted |
-| ----- | ------- | ----- | -------- | ------- |
+| Round | Verdict | Fixed | Disputed | Out of scope | Drafted |
+| ----- | ------- | ----- | -------- | ------------ | ------- |
 
 ## Changes
 - `path` — what changed and which finding it answers
@@ -208,7 +213,10 @@ Final verdict: <verdict from the last report>
 - <where it goes> — <draft, or path to it>
 
 ## Still open
-- <disputed or unfixed finding> — why
+- <disputed or unfixed finding> — why, and what you checked
+
+## Out of scope
+- <finding about code the change didn't introduce> — worth its own change?
 ```
 
 Herdr mode: end with the reviewer's tab id and that it's still running.
