@@ -180,14 +180,23 @@ stamp="$st/stamp-$n"; touch "$stamp"; sleep 1   # find -newer has one-second res
 log="$st/commands-$n.log"; : > "$log"
 events="$st/events-$n.jsonl"
 sandbox='{"sandbox":{"enabled":true,"failIfUnavailable":true,"allowUnsandboxedCommands":false,"network":{"allowedDomains":[],"strictAllowlist":true}}}'
+# Where the CLI has them, also: leave the user's own config (its MCP servers
+# and hooks) out of the review, and keep the reviewer's session off disk, since
+# the gate keeps its own log. Older CLIs lack the flags, so ask first.
+has_flag() { "$1" "${@:2:$#-2}" --help 2>/dev/null | grep -q -- "${@: -1}"; }
 case "$kind" in
   custom) cmd=(bash -c "$REVIEW_GATE_REVIEWER"); out="$report" ;;
   codex)  cmd=(codex exec --json -s workspace-write -c sandbox_workspace_write.network_access=false
-               -c approval_policy=never -C "$cwd" -o "$report" -); out="$events" ;;
+               -c approval_policy=never -C "$cwd" -o "$report")
+          has_flag codex exec --ignore-user-config && cmd+=(--ignore-user-config)
+          has_flag codex exec --ephemeral && cmd+=(--ephemeral)
+          cmd+=(-); out="$events" ;;
   claude) cmd=(claude -p --permission-mode dontAsk --settings "$sandbox"
                --allowedTools "Bash" "Read" "Grep" "Glob" "Skill"
                --disallowedTools "Edit" "Write" "NotebookEdit"
-               --output-format stream-json --verbose); out="$events" ;;
+               --output-format stream-json --verbose)
+          has_flag claude --no-session-persistence && cmd+=(--no-session-persistence)
+          out="$events" ;;
 esac
 # No helper process may keep our stdout open: Claude Code waits for it to close.
 # perl stands in for setsid + timeout, which macOS doesn't ship: it leads a new
@@ -234,7 +243,7 @@ $wrote
 fi
 
 if [ "$(fingerprint)" != "$fp_before" ]; then
-  finish "review-gate: the reviewer changed the working tree during round $n, so the loop stopped. Show the user \`git status\` and \`git diff\`, and don't build on those changes."
+  finish "review-gate: the working tree changed while round $n was being reviewed, so the loop stopped and its verdict doesn't count. The gate can't tell who changed it: the reviewer, the user, or another session or tool working in this repo. Show the user \`git status\` and \`git diff\`, say that, and don't build on changes you didn't make."
 fi
 if [ "$rc" -ne 0 ] || [ ! -s "$report" ]; then
   hint=

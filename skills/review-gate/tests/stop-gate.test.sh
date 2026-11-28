@@ -114,7 +114,7 @@ terminal() {  # terminal <name> <reviewer command> <grep for reason>
   check "$1" '[ "$(state)" = done ] && reason | grep -q "$want"'
 }
 terminal "cannot determine: off, asks for the install command" "$(report 'Cannot determine')" "command that would install"
-terminal "reviewer touched the tree: off, says so" 'cat >/dev/null; echo hacked >> a.txt; printf "## Verdict\nMeets requirement\n"' "changed the working tree"
+terminal "tree changed during the review: off, says it can't tell who did it" 'cat >/dev/null; echo hacked >> a.txt; printf "## Verdict\nMeets requirement\n"' "can.t tell who changed it"
 terminal "reviewer failed: off, names exit status" 'cat >/dev/null; echo oops >&2; exit 3' "exit 3"
 terminal "no verdict: off" 'cat >/dev/null; echo no verdict here' "no verdict"
 start=$(date +%s)
@@ -160,6 +160,9 @@ cat > "$tmp/bin/codex" <<'FAKE'
 # Fake `codex exec`: records its arguments, writes the report to -o, and prints
 # events shaped like a real run's: each command an item.started
 # command_execution, wrapped as `zsh -lc '<command>'`.
+if [ "$*" = "exec --help" ]; then   # a new codex lists both flags; FAKE_CODEX_OLD plays an old one
+  [ -n "${FAKE_CODEX_OLD:-}" ] || printf '  --ephemeral\n  --ignore-user-config\n'; exit 0
+fi
 printf '%s\n' "$@" > "$FAKE_CODEX_ARGS"; cat >/dev/null
 out=; while [ $# -gt 0 ]; do [ "$1" = -o ] && out="$2"; shift; done
 printf '## Verdict\n%s\n' "$FAKE_CODEX_VERDICT" > "$out"
@@ -189,6 +192,9 @@ check "codex reviewer: picked, verdict stands" 'reason | grep -q "(codex reviewe
 check "codex reviewer: commands read unwrapped from its events" '[ "$(cat "$st/commands-1.log")" = "git status --porcelain
 python3 -m unittest -v" ]'
 check "codex reviewer: run offline, with its event log on" 'grep -qx "sandbox_workspace_write.network_access=false" "$tmp/codex-args" && grep -qx -- --json "$tmp/codex-args"'
+check "codex reviewer: without the user's config (MCP, hooks), session kept off disk" 'grep -qx -- --ignore-user-config "$tmp/codex-args" && grep -qx -- --ephemeral "$tmp/codex-args" && [ "$(tail -1 "$tmp/codex-args")" = - ]'
+FAKE_CODEX_OLD=1 codex_hook "python3 -m unittest -v" "Meets requirement — ok"
+check "an older codex without those flags: run without them, verdict stands" '! grep -q -- "--ignore-user-config\|--ephemeral" "$tmp/codex-args" && reason | grep -q "(codex reviewer): Meets requirement"'
 codex_hook "cat requirements.txt
 cd web && npm ci" "Meets requirement — ok"
 check "codex reviewer ran a wrapped install: verdict void, quoted unwrapped" '[ "$(state)" = done ] && reason | grep -q "installed or fetched" && reason | grep -qx "cd web && npm ci"'

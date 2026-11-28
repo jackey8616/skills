@@ -120,9 +120,9 @@ Don't commit or push. The changes stay in the working tree for the user.
 
 The reviewer runs `test-first-code-review`, which `install.sh` installs alongside this skill. Where the reviewer doesn't have it, the gate's prompt still asks for the same verdict and a test-first review, but without the skill's full method. If the user hasn't installed it, say so in the final reply.
 
-The reviewer runs offline. It needs no network, since the requirement is in its prompt, and without one it can't fetch a package under a borrowed name. Codex runs with network access off. Claude runs in Claude Code's sandbox with no hosts allowed, and if that sandbox can't start (on Linux it needs bubblewrap and socat), the gate reports the reviewer as failed rather than run one unconfined. Tests that need the network then come back as Cannot determine, which is the honest result.
+The reviewer runs offline. It needs no network, since the requirement is in its prompt, and without one it can't fetch a package under a borrowed name. Codex runs with network access off and, where its CLI supports it, without the user's own config, so their MCP servers and hooks stay out of the review. Neither reviewer's session is saved to disk; the gate keeps its own log. Claude runs in Claude Code's sandbox with no hosts allowed, and if that sandbox can't start (on Linux it needs bubblewrap and socat), the gate reports the reviewer as failed rather than run one unconfined. Tests that need the network then come back as Cannot determine, which is the honest result.
 
 The gate checks what the reviewer did from records, not from its report:
 
-- It fingerprints the tree before and after. If the reviewer touched it, the loop stops rather than build on changes you didn't make.
+- It fingerprints the tree before and after. If the tree changed during the review, the loop stops rather than build on changes you didn't make. It can't tell whether the reviewer made the change or someone else in the same repo did, so tell the user not to edit the tree while a review runs.
 - It reads every command the reviewer ran from its event log, and checks whether anything was written where packages install: Python's site-packages, and `node_modules`, `.venv` and `venv` in the repo. Either one voids the verdict, and the gate tells the user what it found.
