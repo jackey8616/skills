@@ -136,7 +136,7 @@ Don't commit or push. The changes stay in the working tree for the user.
 
 The reviewer runs `test-first-code-review`, which `install.sh` installs alongside this skill. Where the reviewer doesn't have it, the gate's prompt still asks for the same verdict and a test-first review, but without the skill's full method. If the user hasn't installed it, say so in the final reply.
 
-The reviewer runs offline. It needs no network, since the requirement is in its prompt, and without one it can't fetch a package under a borrowed name. Codex runs with network access off and, where its CLI supports it, without the user's own config, so their MCP servers and hooks stay out of the review. Neither reviewer's session is saved to disk; the gate keeps its own log. Claude runs in Claude Code's sandbox with no hosts allowed, and if that sandbox can't start (on Linux it needs bubblewrap and socat), the gate reports the reviewer as failed rather than run one unconfined. Tests that need the network then come back as Cannot determine, which is the honest result.
+The reviewer runs offline. It needs no network, since the requirement is in its prompt, and without one it can't fetch a package under a borrowed name. Codex runs with network access off. Neither reviewer's session is saved to disk, where the CLI supports that; the gate keeps its own log. Claude runs in Claude Code's sandbox with no hosts allowed, and if that sandbox can't start (on Linux it needs bubblewrap and socat), the gate reports the reviewer as failed rather than run one unconfined. Tests that need the network then come back as Cannot determine, which is the honest result.
 
 The gate checks what the reviewer did from records, not from its report:
 

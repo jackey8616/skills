@@ -224,9 +224,9 @@ check "codex reviewer: picked, verdict stands" 'reason | grep -q "(codex reviewe
 check "codex reviewer: commands read unwrapped from its events" '[ "$(cat "$st/commands-1.log")" = "git status --porcelain
 python3 -m unittest -v" ]'
 check "codex reviewer: run offline, with its event log on" 'grep -qx "sandbox_workspace_write.network_access=false" "$tmp/codex-args" && grep -qx -- --json "$tmp/codex-args"'
-check "codex reviewer: without the user's config (MCP, hooks), session kept off disk" 'grep -qx -- --ignore-user-config "$tmp/codex-args" && grep -qx -- --ephemeral "$tmp/codex-args" && [ "$(tail -1 "$tmp/codex-args")" = - ]'
+check "codex reviewer: session kept off disk, user config (and so its skills) still loaded" 'grep -qx -- --ephemeral "$tmp/codex-args" && ! grep -qx -- --ignore-user-config "$tmp/codex-args" && [ "$(tail -1 "$tmp/codex-args")" = - ]'
 FAKE_CODEX_OLD=1 codex_hook "python3 -m unittest -v" "Meets requirement — ok"
-check "an older codex without those flags: run without them, verdict stands" '! grep -q -- "--ignore-user-config\|--ephemeral" "$tmp/codex-args" && reason | grep -q "(codex reviewer): Meets requirement"'
+check "an older codex without --ephemeral: run without it, verdict stands" '! grep -q -- "--ephemeral" "$tmp/codex-args" && reason | grep -q "(codex reviewer): Meets requirement"'
 codex_hook "cat requirements.txt
 cd web && npm ci" "Meets requirement — ok"
 check "codex reviewer ran a wrapped install: verdict void, quoted unwrapped" '[ "$(state)" = done ] && reason | grep -q "installed or fetched" && reason | grep -qx "cd web && npm ci"'

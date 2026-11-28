@@ -221,15 +221,15 @@ stamp="$st/stamp-$n"; touch "$stamp"; sleep 1   # find -newer has one-second res
 log="$st/commands-$n.log"; : > "$log"
 events="$st/events-$n.jsonl"
 sandbox='{"sandbox":{"enabled":true,"failIfUnavailable":true,"allowUnsandboxedCommands":false,"network":{"allowedDomains":[],"strictAllowlist":true}}}'
-# Where the CLI has them, also: leave the user's own config (its MCP servers
-# and hooks) out of the review, and keep the reviewer's session off disk, since
-# the gate keeps its own log. Older CLIs lack the flags, so ask first.
+# Where the CLI has it, keep the reviewer's session off disk: the gate keeps
+# its own log. Older CLIs lack the flag, so ask first. Not codex's
+# --ignore-user-config: with it, a field run's codex never read the installed
+# test-first-code-review skill, which it did without it.
 has_flag() { "$1" "${@:2:$#-2}" --help 2>/dev/null | grep -q -- "${@: -1}"; }
 case "$kind" in
   custom) cmd=(bash -c "$REVIEW_GATE_REVIEWER"); out="$report" ;;
   codex)  cmd=(codex exec --json -s workspace-write -c sandbox_workspace_write.network_access=false
                -c approval_policy=never -C "$cwd" -o "$report")
-          has_flag codex exec --ignore-user-config && cmd+=(--ignore-user-config)
           has_flag codex exec --ephemeral && cmd+=(--ephemeral)
           cmd+=(-); out="$events" ;;
   claude) cmd=(claude -p --permission-mode dontAsk --settings "$sandbox"
