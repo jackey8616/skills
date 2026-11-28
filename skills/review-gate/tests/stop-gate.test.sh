@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Offline tests for scripts/stop-gate.sh, with a fake reviewer
-# (REVIEW_GATE_REVIEWER). Each call feeds the gate a Stop hook's JSON, as
-# Claude Code would at the end of a turn.
+# Offline tests for scripts/stop-gate.sh and scripts/pre-bash.sh, with a fake
+# reviewer (REVIEW_GATE_REVIEWER). Each call feeds a hook the JSON Claude Code
+# would: the gate at the end of a turn, pre-bash.sh before a Bash call.
 set -uo pipefail
 here="$(cd "$(dirname "$0")/.." && pwd)"
-gate="$here/scripts/stop-gate.sh"
+gate="$here/scripts/stop-gate.sh"; pre="$here/scripts/pre-bash.sh"
 pass=0; fail=0
 ok()  { pass=$((pass+1)); echo "ok   $1"; }
 bad() { fail=$((fail+1)); echo "FAIL $1"; [ -n "${2:-}" ] && printf '     %s\n' "$2"; }
@@ -18,6 +18,8 @@ git init -q; git config user.email t@t; git config user.name t
 echo one > a.txt; git add a.txt; git commit -qm init
 st="$(git rev-parse --absolute-git-dir)/review-gate/S1"
 unset REVIEW_GATE_INSIDE REVIEW_GATE_REVIEWER
+pkgs="$tmp/site-packages"; mkdir -p "$pkgs"
+export REVIEW_GATE_INSTALL_DIRS="$pkgs"   # not the machine's own site-packages
 
 armblock="Done.
 
@@ -29,15 +31,24 @@ Make a.txt say two.
 Keep it one line.
 \`\`\`"
 
-hook() {  # hook [last_message] [session]
-  jq -n --arg m "${1:-}" --arg s "${2:-S1}" \
-    '{session_id:$s, hook_event_name:"Stop", stop_hook_active:false, last_assistant_message:$m}' \
+hook() {  # hook [last_message] [session] [transcript]
+  jq -n --arg m "${1:-}" --arg s "${2:-S1}" --arg t "${3:-}" \
+    '{session_id:$s, hook_event_name:"Stop", stop_hook_active:false, last_assistant_message:$m}
+     + (if $t == "" then {} else {transcript_path:$t} end)' \
     | "$gate"
 }
+pre_bash() {  # pre_bash <command> [session]
+  jq -n --arg c "$1" --arg s "${2:-S1}" '{session_id:$s, hook_event_name:"PreToolUse", tool_name:"Bash", tool_input:{command:$c}}' | "$pre"
+}
+# transcript <file> <lines…>: a session transcript, one JSON record per argument.
+typed() { jq -nc --arg t "$1" '{type:"user", message:{role:"user", content:$t}}'; }
+bash_call() { jq -nc --arg i "$1" --arg c "$2" '{type:"assistant", message:{content:[{type:"tool_use", id:$i, name:"Bash", input:{command:$c}}]}}'; }
+result() { jq -nc --arg i "$1" --arg r "$2" '{type:"user", message:{content:[{type:"tool_result", tool_use_id:$i, content:$r}]}}'; }
+feedback() { jq -nc '{type:"user", isMeta:true, message:{content:[{type:"text", text:"Stop hook feedback:\nreview-gate round 1"}]}}'; }
 report() { printf 'cat >/dev/null; printf "## Verdict\\n%s — reason\\n\\n## Findings\\n1. **[error]** a.txt:1 — FINDING\\n"' "$1"; }
 reason() { jq -r .reason <<<"$out"; }
 state() { cat "$st/state" 2>/dev/null; }
-reset() { rm -rf "$repo/.git/review-gate"; git -C "$repo" checkout -q a.txt; }
+reset() { rm -rf "$repo/.git/review-gate" "$pkgs"/*; git -C "$repo" checkout -q a.txt; }
 
 # --- Not armed
 out="$(REVIEW_GATE_REVIEWER='exit 99' hook "What does this repo do?")"
@@ -126,5 +137,48 @@ gpid=$!; for _ in $(seq 50); do [ -s "$tmp/rpid" ] && break; sleep 0.1; done
 kill -TERM "$gpid"; wait "$gpid"; sleep 0.5
 check "SIGTERM (Esc): reviewer killed, gate off, no block" \
   'gone "$(cat "$tmp/rpid")" && [ "$(state)" = done ] && [ ! -s "$tmp/out" ]'
+
+# --- What the reviewer did, from the record
+terminal "reviewer ran an install: verdict void, off, quotes the command" \
+  'cat >/dev/null; echo "cd x && pip install acme-testkit" >> "$REVIEW_GATE_COMMAND_LOG"; printf "## Verdict\nMeets requirement\n"' "pip install acme-testkit"
+terminal "reviewer wrote where packages install: verdict void, off" \
+  "cat >/dev/null; touch '$pkgs/evil.py'; printf '## Verdict\nMeets requirement\n'" "evil.py"
+reset; echo two > a.txt
+out="$(REVIEW_GATE_REVIEWER='cat >/dev/null; echo "grep -n \"pip install\" README.md" >> "$REVIEW_GATE_COMMAND_LOG"; printf "## Verdict\nMeets requirement\n"' hook "$armblock")"
+check "reviewer only grepped for pip install: verdict stands" 'reason | grep -q "): Meets requirement"'
+
+# --- What the implementer did, from the session transcript
+reset; echo two > a.txt; tr="$tmp/transcript.jsonl"
+{ typed "earlier task"; bash_call t0 "pip install requests"; result t0 ok
+  typed "/review-gate make it two"; bash_call t1 "cat requirements-dev.txt"; result t1 ok
+  bash_call t2 "pip download acme_testkit -d /tmp/x"; result t2 "ProxyError"; } > "$tr"
+out="$(REVIEW_GATE_REVIEWER='exit 99' hook "$armblock" S1 "$tr")"
+check "implementer fetched a package this turn: off, quoted, nothing reviewed" \
+  '[ "$(state)" = done ] && reason | grep -q "pip download acme_testkit" && ! reason | grep -q "pip install requests" && [ "$(cat "$st/round")" = 0 ]'
+
+reset; echo two > a.txt
+{ typed "earlier task"; bash_call t0 "pip install requests"; result t0 ok
+  typed "/review-gate make it two"; bash_call t1 "pip install acme-testkit"
+  result t1 "review-gate: blocked a command that installs or fetches a package"; } > "$tr"
+out="$(REVIEW_GATE_REVIEWER="$(report 'Does not meet requirement')" hook "$armblock" S1 "$tr")"
+check "a denied attempt and an earlier turn's install don't count: the review runs" '[ "$(state)" = armed ] && [ "$(cat "$st/round")" = 1 ]'
+{ feedback; bash_call t3 "python3 -m pip install x"; result t3 ok; } >> "$tr"
+out="$(REVIEW_GATE_REVIEWER='exit 99' hook "Fixed." S1 "$tr")"
+check "an install after hook feedback, later in the turn, counts" '[ "$(state)" = done ] && reason | grep -q "python3 -m pip install x"'
+
+# --- pre-bash.sh
+reset
+out="$(pre_bash "pip install acme-testkit")"
+check "pre-bash: invoked, not armed yet: denies an install" '[ "$(jq -r .hookSpecificOutput.permissionDecision <<<"$out")" = deny ]'
+out="$(pre_bash "python3 -m unittest -v")"
+check "pre-bash: allows an ordinary command" '[ -z "$out" ]'
+echo two > a.txt; REVIEW_GATE_REVIEWER="$(report 'Does not meet requirement')" hook "$armblock" >/dev/null
+out="$(pre_bash "npm ci")"
+check "pre-bash: armed: denies" 'jq -r .hookSpecificOutput.permissionDecisionReason <<<"$out" | grep -q "npm ci"'
+out="$(REVIEW_GATE_INSIDE=1 pre_bash "npm ci")"
+check "pre-bash: inside the reviewer: allows (its sandbox fences it)" '[ -z "$out" ]'
+echo done > "$st/state"
+out="$(pre_bash "pip install requests")"
+check "pre-bash: gate off: allows" '[ -z "$out" ]'
 
 echo; echo "$pass passed, $fail failed"; [ "$fail" -eq 0 ]

@@ -6,9 +6,14 @@ hooks:
     - hooks:
         - type: command
           # For a skill's hooks, CLAUDE_PLUGIN_ROOT is the skill's directory.
-          command: '"${CLAUDE_PLUGIN_ROOT}/scripts/stop-gate.sh"'
+          command: 'bash "${CLAUDE_PLUGIN_ROOT}/scripts/stop-gate.sh"'
           timeout: 1800
           statusMessage: "review-gate: independent review running"
+  PreToolUse:
+    - matcher: Bash
+      hooks:
+        - type: command
+          command: 'bash "${CLAUDE_PLUGIN_ROOT}/scripts/pre-bash.sh"'
 ---
 
 # Review gate
@@ -56,6 +61,8 @@ Write the change and its tests, run the tests, and end your turn with the block.
 If the tests can't run because something is missing (a dependency, a service, a credential), don't download, install or fetch it to get them going. Say what's missing, and end your turn with the block as usual: the reviewer will hit the same wall and report Cannot determine, which is the honest result. Setting up the environment is the user's call. A dependency named for a private index, fetched from a public one, is also how dependency confusion gets in: anyone can publish a package under that name there.
 
 Nor stand in for it: no stub module or mock service to get a result. A pass against a stand-in says nothing about the real dependency, and a reader who skims sees only "both passed". Report the tests as not run.
+
+The gate doesn't take your word or the reviewer's for any of this. From invocation until the gate turns off, a hook denies Bash commands that install or fetch packages. At each stop, the gate reads the commands that actually ran from the session transcript, and if any installed or fetched a package, it turns off and tells the user exactly what ran. A pattern only catches honest slips: a command that downloads by other means gets past it. The fence that holds is Claude Code's own sandbox with network limited (`/sandbox`). Recommend it to the user when the work runs untrusted code.
 
 A review takes minutes, and the status line shows it running. If the user presses Esc, the review is cancelled and the gate turns off.
 
@@ -113,4 +120,9 @@ Don't commit or push. The changes stay in the working tree for the user.
 
 The reviewer runs `test-first-code-review`, which `install.sh` installs alongside this skill. Where the reviewer doesn't have it, the gate's prompt still asks for the same verdict and a test-first review, but without the skill's full method. If the user hasn't installed it, say so in the final reply.
 
-Either way the gate fingerprints the tree before and after the review. If the reviewer touched it, the loop stops rather than build on changes you didn't make.
+The reviewer runs offline. It needs no network, since the requirement is in its prompt, and without one it can't fetch a package under a borrowed name. Codex runs with network access off. Claude runs in Claude Code's sandbox with no hosts allowed, and if that sandbox can't start (on Linux it needs bubblewrap and socat), the gate reports the reviewer as failed rather than run one unconfined. Tests that need the network then come back as Cannot determine, which is the honest result.
+
+The gate checks what the reviewer did from records, not from its report:
+
+- It fingerprints the tree before and after. If the reviewer touched it, the loop stops rather than build on changes you didn't make.
+- It reads every command the reviewer ran from its event log, and checks whether anything was written where packages install: Python's site-packages, and `node_modules`, `.venv` and `venv` in the repo. Either one voids the verdict, and the gate tells the user what it found.

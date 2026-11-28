@@ -27,6 +27,7 @@
 #   codex on PATH         codex exec (cross-vendor)
 #   otherwise             claude -p in a fresh context (same vendor)
 set -uo pipefail
+. "$(dirname "$0")/lib.sh"
 
 [ -n "${REVIEW_GATE_INSIDE:-}" ] && exit 0   # we are the reviewer's own hook
 
@@ -41,6 +42,32 @@ cwd="$(pwd)"
 
 block() { jq -n --arg r "$1" '{decision:"block", reason:$r}'; exit 0; }
 finish() { echo done > "$st/state"; block "$1"; }   # last block; the gate is off after it
+# Where this turn's commands start in the session transcript: the last prompt
+# the user typed, as of the first stop after the skill was invoked. Hook
+# feedback is isMeta, tool results aren't typed, so neither moves it.
+typed_prompt_line() {
+  jq -nR 'foreach (inputs | fromjson? // null) as $x (0; . + 1; [., $x])
+    | select(.[1].type? == "user" and (.[1].isMeta | not)
+             and ((.[1].message.content | type) == "string"
+                  or ([.[1].message.content[]?.type] | index("tool_result") | not)))
+    | .[0]' "$1" 2>/dev/null | tail -1
+}
+# implementer_installs: the Bash commands run since then that install or
+# fetch, read from the transcript Claude Code wrote, not from any reply.
+# Commands pre-bash.sh denied never ran, so they don't count.
+implementer_installs() {
+  local tp; tp="$(jq -r '.transcript_path // ""' <<<"$in")"
+  [ -f "$tp" ] || return 0
+  [ -s "$gd/review-gate/$sid.scan-from" ] || { mkdir -p "$gd/review-gate"; typed_prompt_line "$tp" > "$gd/review-gate/$sid.scan-from"; }
+  tail -n +"$(cat "$gd/review-gate/$sid.scan-from" 2>/dev/null || echo 1)" "$tp" | jq -nrR '
+    [inputs | fromjson? // empty] as $m
+    | [$m[] | select(.type == "user") | .message.content | arrays | .[]
+       | select(.type == "tool_result" and ((.content | tostring) | test("review-gate: blocked")))
+       | .tool_use_id] as $denied
+    | $m[] | select(.type == "assistant") | .message.content | arrays | .[]
+    | select(.type == "tool_use" and .name == "Bash") | select(.id as $i | $denied | index($i) | not)
+    | .input.command // empty' 2>/dev/null | install_lines
+}
 fingerprint() {
   { git rev-parse HEAD; git status --porcelain; git diff HEAD;
     git ls-files -oz --exclude-standard | xargs -0 shasum; } | shasum | cut -d' ' -f1
@@ -74,13 +101,22 @@ if [ -n "$spec" ]; then
   echo 0 > "$st/round"; : > "$st/rounds.tsv"; echo armed > "$st/state"
 fi
 
+[ "$(cat "$st/state" 2>/dev/null)" = done ] && exit 0
+
+ran="$(implementer_installs | head -5)"
+if [ -n "$ran" ]; then
+  mkdir -p "$st"
+  finish "review-gate: this session ran commands that install or fetch packages, which the skill rules out (read from the session transcript, not from any reply):
+$ran
+The gate is off, and nothing was reviewed. Tell the user exactly what ran, as quoted above, and that a review now would test against an environment they didn't set up."
+fi
+
 if [ ! -f "$st/state" ]; then
   # Invoked (the hook only exists once the skill is), but never armed.
   [ -z "$(git status --porcelain)" ] && exit 0    # nothing written yet: just a question, or asking for the requirement
   mkdir -p "$st"; echo done > "$st/state"         # remind once, never again
   block "review-gate: the gate isn't armed, so nothing has reviewed your changes. End your reply with the \`\`\`review-gate block (source, base, requirement) the skill describes, and the review runs when you stop. If the user doesn't want the review, say so and stop."
 fi
-[ "$(cat "$st/state")" = armed ] || exit 0
 
 base="$(cat "$st/base")"; source="$(cat "$st/source")"; round="$(cat "$st/round")"
 changed="$( { git diff --name-status "$base"; git ls-files --others --exclude-standard | sed 's/^/??\t/'; } )"
@@ -126,19 +162,38 @@ EOF
 
 fp_before="$(fingerprint)"
 
+# Where packages land. A review that writes there installed something, whatever
+# its report says. REVIEW_GATE_INSTALL_DIRS (colon-separated) replaces the list.
+if [ -n "${REVIEW_GATE_INSTALL_DIRS:-}" ]; then
+  IFS=: read -r -a install_dirs <<<"$REVIEW_GATE_INSTALL_DIRS"
+else
+  install_dirs=()
+  while IFS= read -r d; do [ -d "$d" ] && install_dirs+=("$d"); done < <(
+    python3 -c 'import site; print("\n".join(site.getsitepackages() + [site.getusersitepackages()]))' 2>/dev/null
+    for d in node_modules .venv venv; do echo "$cwd/$d"; done)
+fi
+stamp="$st/stamp-$n"; touch "$stamp"; sleep 1   # find -newer has one-second resolution on some filesystems
+
+# The reviewer runs offline: it needs no network (the requirement is in its
+# prompt), and without one it can't fetch a package under a borrowed name.
+# Every command it runs is recorded, so what it did is read from the record.
+log="$st/commands-$n.log"; : > "$log"
+events="$st/events-$n.jsonl"
+sandbox='{"sandbox":{"enabled":true,"failIfUnavailable":true,"allowUnsandboxedCommands":false,"network":{"allowedDomains":[],"strictAllowlist":true}}}'
 case "$kind" in
-  custom) cmd=(bash -c "$REVIEW_GATE_REVIEWER") ;;
-  codex)  cmd=(codex exec -s workspace-write -c sandbox_workspace_write.network_access=true
-               -c approval_policy=never -C "$cwd" -o "$report.codex" -) ;;
-  claude) cmd=(claude -p --permission-mode dontAsk
+  custom) cmd=(bash -c "$REVIEW_GATE_REVIEWER"); out="$report" ;;
+  codex)  cmd=(codex exec --json -s workspace-write -c sandbox_workspace_write.network_access=false
+               -c approval_policy=never -C "$cwd" -o "$report" -); out="$events" ;;
+  claude) cmd=(claude -p --permission-mode dontAsk --settings "$sandbox"
                --allowedTools "Bash" "Read" "Grep" "Glob" "Skill"
-               --disallowedTools "Edit" "Write" "NotebookEdit") ;;
+               --disallowedTools "Edit" "Write" "NotebookEdit"
+               --output-format stream-json --verbose); out="$events" ;;
 esac
 # No helper process may keep our stdout open: Claude Code waits for it to close.
 # perl stands in for setsid + timeout, which macOS doesn't ship: it leads a new
 # process group, and on the deadline kills that group and exits 124. Esc sends
 # us SIGTERM, and the trap takes the whole group down with us.
-REVIEW_GATE_INSIDE=1 perl -e '
+REVIEW_GATE_INSIDE=1 REVIEW_GATE_COMMAND_LOG="$log" perl -e '
   my $t = shift; setpgrp(0, 0);
   my $pid = fork() // die "fork: $!";
   if (!$pid) { exec @ARGV or die "exec $ARGV[0]: $!" }
@@ -148,18 +203,38 @@ REVIEW_GATE_INSIDE=1 perl -e '
     kill "KILL", -$$ if kill 0, $pid; exit 124;
   };
   alarm $t; waitpid $pid, 0; exit($? & 127 ? 128 + ($? & 127) : $? >> 8);
-' "$timeout_s" "${cmd[@]}" < "$prompt" > "$report" 2> "$report.err" &
+' "$timeout_s" "${cmd[@]}" < "$prompt" > "$out" 2> "$report.err" &
 pid=$!
 trap 'kill -TERM -- -"$pid" 2>/dev/null; echo done > "$st/state"; exit 0' TERM INT
 wait "$pid"; rc=$?
 [ "$rc" -eq 124 ] && echo "review-gate: reviewer timed out after ${timeout_s}s" >> "$report.err"
-[ "$kind" = codex ] && [ -s "$report.codex" ] && mv "$report.codex" "$report"
+case "$kind" in
+  claude)
+    jq -r 'select(.type == "result") | .result // empty' "$events" 2>/dev/null | tail -c 1000000 > "$report"
+    jq -r 'select(.type == "assistant") | .message.content[]? | select(.type == "tool_use" and .name == "Bash") | .input.command // empty' "$events" > "$log" 2>/dev/null ;;
+  codex)
+    # Codex's event schema isn't pinned here: take every "command" field, wherever it sits.
+    jq -r '.. | objects | .command? // empty | if type == "array" then join(" ") else tostring end' "$events" > "$log" 2>/dev/null ;;
+esac
+
+installed="$(install_lines < "$log" | head -5)"
+wrote="$( (( ${#install_dirs[@]} )) && find "${install_dirs[@]}" -newer "$stamp" -print 2>/dev/null | head -5)"
+if [ -n "$installed$wrote" ]; then
+  finish "review-gate: the $kind reviewer installed or fetched packages in round $n, which the gate rules out, so its verdict doesn't count and the gate is off. From the record, not from its report:
+${installed:+Commands it ran:
+$installed
+}${wrote:+Written where packages install:
+$wrote
+}Tell the user exactly this, and that the review ran against an environment they didn't set up."
+fi
 
 if [ "$(fingerprint)" != "$fp_before" ]; then
   finish "review-gate: the reviewer changed the working tree during round $n, so the loop stopped. Show the user \`git status\` and \`git diff\`, and don't build on those changes."
 fi
 if [ "$rc" -ne 0 ] || [ ! -s "$report" ]; then
-  finish "review-gate: the $kind reviewer failed in round $n (exit $rc). Tell the user, quoting the tail of $report.err, and stop. Don't retry."
+  hint=
+  grep -qi sandbox "$report.err" 2>/dev/null && hint=" Its sandbox couldn't start, and the gate won't run a reviewer without one: on Linux it needs bubblewrap and socat installed."
+  finish "review-gate: the $kind reviewer failed in round $n (exit $rc).$hint Tell the user, quoting the tail of $report.err, and stop. Don't retry."
 fi
 
 verdict="$(awk '/## Verdict/{f=1; next} f && NF {print; exit}' "$report" | sed 's/^[•*[:space:]]*//')"
