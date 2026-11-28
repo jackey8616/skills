@@ -153,6 +153,50 @@ reset; echo two > a.txt
 out="$(REVIEW_GATE_REVIEWER='cat >/dev/null; echo "cat requirements-dev.txt; ls; pip download acme_testkit --help >/dev/null 2>&1; pip list 2>/dev/null | grep -i acme" >> "$REVIEW_GATE_COMMAND_LOG"; printf "## Verdict\nCannot determine — x\n"' hook "$armblock")"
 check "reviewer ran pip download <pkg> --help: not an install" 'reason | grep -q "): Cannot determine"'
 
+# --- A codex reviewer, faked with the event shape a real `codex exec --json` wrote
+mkdir -p "$tmp/bin"
+cat > "$tmp/bin/codex" <<'FAKE'
+#!/usr/bin/env bash
+# Fake `codex exec`: records its arguments, writes the report to -o, and prints
+# events shaped like a real run's: each command an item.started
+# command_execution, wrapped as `zsh -lc '<command>'`.
+printf '%s\n' "$@" > "$FAKE_CODEX_ARGS"; cat >/dev/null
+out=; while [ $# -gt 0 ]; do [ "$1" = -o ] && out="$2"; shift; done
+printf '## Verdict\n%s\n' "$FAKE_CODEX_VERDICT" > "$out"
+echo '{"type":"thread.started","thread_id":"t"}'
+while IFS= read -r c; do
+  [ -n "$c" ] || continue
+  w="/opt/homebrew/bin/zsh -lc '${c//\'/\'\\\'\'}'"
+  if [ "${FAKE_CODEX_SHAPE:-}" = other ]; then
+    jq -nc --arg c "$w" '{type:"item.started", item:{type:"shell_call", argv:$c}}'
+  else
+    jq -nc --arg c "$w" '{type:"item.started", item:{type:"command_execution", command:$c, status:"in_progress"}}'
+    jq -nc --arg c "$w" '{type:"item.completed", item:{type:"command_execution", command:$c, status:"completed", exit_code:0}}'
+  fi
+done <<<"$FAKE_CODEX_COMMANDS"
+echo '{"type":"turn.completed"}'
+FAKE
+chmod +x "$tmp/bin/codex"
+codex_hook() {  # codex_hook <commands> <verdict> [shape]: one round with the fake codex
+  reset; echo two > a.txt
+  out="$(PATH="$tmp/bin:$PATH" FAKE_CODEX_ARGS="$tmp/codex-args" FAKE_CODEX_COMMANDS="$1" \
+    FAKE_CODEX_VERDICT="$2" FAKE_CODEX_SHAPE="${3:-}" hook "$armblock")"
+}
+codex_hook "git status --porcelain
+python3 -m unittest -v" "Meets requirement — ok"
+check "codex reviewer: picked, verdict stands" 'reason | grep -q "(codex reviewer): Meets requirement" && cut -f2 "$st/rounds.tsv" | grep -qx codex'
+check "codex reviewer: commands read unwrapped from its events" '[ "$(cat "$st/commands-1.log")" = "git status --porcelain
+python3 -m unittest -v" ]'
+check "codex reviewer: run offline, with its event log on" 'grep -qx "sandbox_workspace_write.network_access=false" "$tmp/codex-args" && grep -qx -- --json "$tmp/codex-args"'
+codex_hook "cat requirements.txt
+cd web && npm ci" "Meets requirement — ok"
+check "codex reviewer ran a wrapped install: verdict void, quoted unwrapped" '[ "$(state)" = done ] && reason | grep -q "installed or fetched" && reason | grep -qx "cd web && npm ci"'
+quoted="echo 'it'\\''s here'; pip install x"   # a command with a quote in it, as a shell would write it
+codex_hook "$quoted" "Meets requirement — ok"
+check "codex reviewer: a command with quotes in it unwraps to itself" '[ "$(cat "$st/commands-1.log")" = "$quoted" ] && reason | grep -q "installed or fetched"'
+codex_hook "python3 -m unittest -v" "Meets requirement — ok" other
+check "codex events in a shape the gate can't read: verdict void, says so" '[ "$(state)" = done ] && reason | grep -q "couldn.t read the codex reviewer.s commands"'
+
 # --- What the implementer did, from the session transcript
 reset; echo two > a.txt; tr="$tmp/transcript.jsonl"
 { typed "earlier task"; bash_call t0 "pip install requests"; result t0 ok

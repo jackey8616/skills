@@ -213,9 +213,14 @@ case "$kind" in
     jq -r 'select(.type == "result") | .result // empty' "$events" 2>/dev/null | tail -c 1000000 > "$report"
     jq -r 'select(.type == "assistant") | .message.content[]? | select(.type == "tool_use" and .name == "Bash") | .input.command // empty' "$events" > "$log" 2>/dev/null ;;
   codex)
-    # Codex's event schema isn't pinned here: take every "command" field, wherever it sits.
-    jq -r '.. | objects | .command? // empty | if type == "array" then join(" ") else tostring end' "$events" > "$log" 2>/dev/null ;;
+    jq -r --argjson all false -f "$(dirname "$0")/codex-commands.jq" "$events" > "$log" 2>/dev/null
+    [ -s "$log" ] || jq -r --argjson all true -f "$(dirname "$0")/codex-commands.jq" "$events" > "$log" 2>/dev/null ;;
 esac
+# A test-first review runs commands. None read from a log that exists means
+# the log's shape changed and the gate can't see what the reviewer did.
+if [ "$kind" != custom ] && [ "$rc" -eq 0 ] && [ -s "$events" ] && [ ! -s "$log" ]; then
+  finish "review-gate: couldn't read the $kind reviewer's commands from its event log ($events), so the gate can't check what it did, and its verdict doesn't count. The gate is off. Tell the user: the log's format may have changed, and review-gate needs updating."
+fi
 
 installed="$(install_lines < "$log" | head -5)"
 wrote="$( (( ${#install_dirs[@]} )) && find "${install_dirs[@]}" -newer "$stamp" -print 2>/dev/null | head -5)"
