@@ -53,6 +53,8 @@ Once is enough. The gate keeps it for every later round, and a new block replace
 
 Write the change and its tests, run the tests, and end your turn with the block. The hook fires at the end of every turn, but it only reviews when the working tree differs from the base. A turn that changed nothing, or a question the user asks, ends straight away.
 
+If the tests can't run because something is missing (a dependency, a service, a credential), don't download, install or fetch it to get them going. Say what's missing, and end your turn with the block as usual: the reviewer will hit the same wall and report Cannot determine, which is the honest result. Setting up the environment is the user's call. A dependency named for a private index, fetched from a public one, is also how dependency confusion gets in: anyone can publish a package under that name there.
+
 A review takes minutes, and the status line shows it running. If the user presses Esc, the review is cancelled and the gate turns off.
 
 ## 3. When the gate blocks
