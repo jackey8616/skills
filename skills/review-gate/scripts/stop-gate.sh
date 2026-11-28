@@ -109,6 +109,17 @@ else kind=claude; fi
     printf '%s\n\n' "${msg:-(none)}"
   fi
   echo "Use the requirement and file list above as given. Don't fetch the PR or issue. Don't modify the working tree."
+  echo
+  # The gate reads the verdict off the report, so state the shape here too:
+  # without test-first-code-review installed, the line above is plain text.
+  cat <<'EOF'
+Your report is read by a script, so start it with these two lines, the verdict being exactly one of the four, then your test runs, requirement claims and findings:
+
+## Verdict
+Meets requirement | Meets requirement, fixes required | Does not meet requirement | Cannot determine — one-line reason
+
+Run the change's tests before reading the code. Meets requirement: tests ran and show every claim met, with no error or fix findings. Fixes required: met, but something must be fixed before merge. Does not meet: no tests, a claim not met or not covered, or an error finding. Cannot determine: tests exist but couldn't run; name what's missing and the command that would install or provide it.
+EOF
 } > "$prompt"
 
 fp_before="$(fingerprint)"

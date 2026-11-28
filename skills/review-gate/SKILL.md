@@ -107,4 +107,6 @@ Don't commit or push. The changes stay in the working tree for the user.
 - `codex` on PATH → `codex exec`, with writes limited to the working directory and network on. A second vendor is the point.
 - Otherwise → `claude -p` in a fresh context, with Edit and Write denied. Same vendor, but none of your context. Say so in the final reply, because it is weaker evidence than a second vendor.
 
+The reviewer runs `test-first-code-review`, which `install.sh` installs alongside this skill. Where the reviewer doesn't have it, the gate's prompt still asks for the same verdict and a test-first review, but without the skill's full method. If the user hasn't installed it, say so in the final reply.
+
 Either way the gate fingerprints the tree before and after the review. If the reviewer touched it, the loop stops rather than build on changes you didn't make.
