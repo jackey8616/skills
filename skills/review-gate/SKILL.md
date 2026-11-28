@@ -109,6 +109,22 @@ Final verdict: <verdict>
 
 The gate's last message gives the path of `rounds.tsv`. Each round's report is in `report-<n>.md` beside it.
 
+## The record
+
+The gate's record of every review is what you, the user, or anyone after can audit the reviewer by. The reviewers' own sessions aren't saved. It lives in `.git/review-gate/<session>/`, written only by the hook. For each round:
+
+- `prompt-<n>.md`: what the reviewer was asked;
+- `events-<n>.jsonl`: everything it did, each command with its output;
+- `commands-<n>.log`: the commands alone;
+- `report-<n>.md` and its stderr;
+- a line in `rounds.tsv`.
+
+A new `review-gate` block starts a new run, and the last run's record moves to `runs/<UTC time>/`. Nothing is erased.
+
+`ledger.sha256` holds a checksum of every record as it's written: the requirement, the base and the source at arming, and each round's files once its review ends. At each stop the gate checks the ledger. If a record was changed or deleted, it turns off and names the files. This catches edits, not a forger who rewrites the ledger as well. Under Claude Code's Bash sandbox, `.git` is read-only to you, so the record is safe there.
+
+`.git` keeps the record out of the working tree, out of commits, and out of what the reviewer is shown. It also travels with the repo: a copy of the repo (`cp -a`, a backup, a synced folder) carries the record, and with it the code and command output in it. Deleting or re-cloning the repo deletes the record. Tell the user both when it matters.
+
 Don't commit or push. The changes stay in the working tree for the user.
 
 ## The reviewer

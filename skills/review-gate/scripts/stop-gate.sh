@@ -68,6 +68,12 @@ implementer_installs() {
     | select(.type == "tool_use" and .name == "Bash") | select(.id as $i | $denied | index($i) | not)
     | .input.command // empty' 2>/dev/null | install_lines
 }
+# The ledger: a sha256 for each record the gate writes, checked at every stop
+# while armed, so a record changed or deleted afterwards is caught. It catches
+# edits, not a forger who rewrites the ledger too (SKILL.md says so). Under
+# Claude Code's Bash sandbox, .git is read-only to the implementer anyway.
+ledger_add() { (cd "$st" && for f in "$@"; do [ -e "$f" ] && shasum -a 256 "$f"; done) >> "$st/ledger.sha256"; }
+ledger_bad() { [ -s "$st/ledger.sha256" ] && (cd "$st" && shasum -a 256 -c ledger.sha256 2>/dev/null | grep -v ': OK$' | sed 's/: [^:]*$//'); return 0; }
 fingerprint() {
   { git rev-parse HEAD; git status --porcelain; git diff HEAD;
     git ls-files -oz --exclude-standard | xargs -0 shasum; } | shasum | cut -d' ' -f1
@@ -95,10 +101,17 @@ if [ -n "$spec" ]; then
   if [ -n "$problem" ]; then
     block "review-gate: the review-gate block in your reply can't arm the gate: $problem. End your reply with the block again, fixed."
   fi
-  rm -rf "$st"; mkdir -p "$st"
+  # A new block starts a new run. The last run's records are kept, not erased:
+  # they move to runs/<UTC time>/, so every review stays auditable.
+  if [ -d "$st" ] && [ -n "$(ls -A "$st" | grep -vx runs)" ]; then
+    a="$st/runs/$(date -u +%Y%m%dT%H%M%SZ)"; [ -e "$a" ] && a="$a-$$"
+    mkdir -p "$a" && find "$st" -mindepth 1 -maxdepth 1 ! -name runs -exec mv {} "$a/" \;
+  fi
+  mkdir -p "$st"
   echo "$rev" > "$st/base"; printf '%s\n' "$source" > "$st/source"
   printf '%s\n' "$req" > "$st/requirement.md"
   echo 0 > "$st/round"; : > "$st/rounds.tsv"; echo armed > "$st/state"
+  ledger_add base source requirement.md
 fi
 
 [ "$(cat "$st/state" 2>/dev/null)" = done ] && exit 0
@@ -116,6 +129,13 @@ if [ ! -f "$st/state" ]; then
   [ -z "$(git status --porcelain)" ] && exit 0    # nothing written yet: just a question, or asking for the requirement
   mkdir -p "$st"; echo done > "$st/state"         # remind once, never again
   block "review-gate: the gate isn't armed, so nothing has reviewed your changes. End your reply with the \`\`\`review-gate block (source, base, requirement) the skill describes, and the review runs when you stop. If the user doesn't want the review, say so and stop."
+fi
+
+changed_records="$(ledger_bad)"
+if [ -n "$changed_records" ]; then
+  finish "review-gate: records the gate wrote were changed or deleted afterwards, so the requirement and the earlier rounds can't be trusted, and the gate is off:
+$changed_records
+They're in $st. Tell the user exactly which files changed. The gate can't tell who changed them."
 fi
 
 base="$(cat "$st/base")"; source="$(cat "$st/source")"; round="$(cat "$st/round")"
@@ -230,6 +250,8 @@ esac
 if [ "$kind" != custom ] && [ "$rc" -eq 0 ] && [ -s "$events" ] && [ ! -s "$log" ]; then
   finish "review-gate: couldn't read the $kind reviewer's commands from its event log ($events), so the gate can't check what it did, and its verdict doesn't count. The gate is off. Tell the user: the log's format may have changed, and review-gate needs updating."
 fi
+
+ledger_add "prompt-$n.md" "events-$n.jsonl" "commands-$n.log" "report-$n.md" "report-$n.md.err"
 
 installed="$(install_lines < "$log" | head -5)"
 wrote="$( (( ${#install_dirs[@]} )) && find "${install_dirs[@]}" -newer "$stamp" -print 2>/dev/null | head -5)"

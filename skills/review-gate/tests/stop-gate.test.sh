@@ -97,10 +97,30 @@ check "after pass: allows, no reminder" '[ -z "$out" ]'
 
 out="$(REVIEW_GATE_REVIEWER="$(report 'Does not meet requirement')" hook "$armblock")"
 check "a new block re-arms from round 1" '[ "$(state)" = armed ] && [ "$(cat "$st/round")" = 1 ]'
+check "a new block keeps the last run's records, archived" \
+  'r=$(ls -d "$st"/runs/*/ | head -1); [ "$(ls -d "$st"/runs/*/ | wc -l)" = 1 ] && [ "$(wc -l < "$r/rounds.tsv")" = 3 ] && [ -f "$r/report-3.md" ] && [ -f "$r/ledger.sha256" ]'
+check "the new run's ledger covers its own records" 'grep -q " requirement.md$" "$st/ledger.sha256" && grep -q " report-1.md$" "$st/ledger.sha256"'
+
 out="$(REVIEW_GATE_REVIEWER='exit 99' hook "I dispute everything.
 review-gate: off")"
 check "review-gate: off turns it off without reviewing" '[ -z "$out" ] && [ "$(state)" = done ]'
 reset
+
+# --- The ledger: records changed after the gate wrote them
+tamper() {  # tamper <name> <command run in $st after round 1> <file the gate must name>
+  reset; echo two > a.txt
+  REVIEW_GATE_REVIEWER="$(report 'Does not meet requirement')" hook "$armblock" >/dev/null
+  (cd "$st" && eval "$2")
+  out="$(REVIEW_GATE_REVIEWER='exit 99' hook "Fixed.")"; want="$3"
+  check "$1" '[ "$(state)" = done ] && reason | grep -q "changed or deleted afterwards" && reason | grep -qx "$want" && [ "$(cat "$st/round")" = 1 ]'
+}
+tamper "a report edited after the round: caught, named, nothing reviewed" 'echo "## Verdict" > report-1.md' report-1.md
+tamper "the requirement weakened after arming: caught" 'echo "Anything goes." > requirement.md' requirement.md
+tamper "a round's prompt deleted: caught" 'rm prompt-1.md' prompt-1.md
+reset; echo two > a.txt
+REVIEW_GATE_REVIEWER="$(report 'Does not meet requirement')" hook "$armblock" >/dev/null
+out="$(REVIEW_GATE_REVIEWER="$(report 'Meets requirement')" hook "Fixed.")"
+check "records left alone: the ledger checks out and round 2 runs" 'reason | grep -q "round 2/10 (custom reviewer): Meets requirement"'
 
 # --- Terminal outcomes
 echo two > a.txt
