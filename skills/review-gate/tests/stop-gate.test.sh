@@ -166,7 +166,8 @@ printf '## Verdict\n%s\n' "$FAKE_CODEX_VERDICT" > "$out"
 echo '{"type":"thread.started","thread_id":"t"}'
 while IFS= read -r c; do
   [ -n "$c" ] || continue
-  w="/opt/homebrew/bin/zsh -lc '${c//\'/\'\\\'\'}'"
+  if [ "${FAKE_CODEX_SHAPE:-}" = raw ]; then w="$c"   # already wrapped, as codex wrote it
+  else w="/opt/homebrew/bin/zsh -lc '${c//\'/\'\\\'\'}'"; fi
   if [ "${FAKE_CODEX_SHAPE:-}" = other ]; then
     jq -nc --arg c "$w" '{type:"item.started", item:{type:"shell_call", argv:$c}}'
   else
@@ -194,6 +195,16 @@ check "codex reviewer ran a wrapped install: verdict void, quoted unwrapped" '[ 
 quoted="echo 'it'\\''s here'; pip install x"   # a command with a quote in it, as a shell would write it
 codex_hook "$quoted" "Meets requirement — ok"
 check "codex reviewer: a command with quotes in it unwraps to itself" '[ "$(cat "$st/commands-1.log")" = "$quoted" ] && reason | grep -q "installed or fetched"'
+# Codex double-quotes a command that has single quotes in it, sometimes in
+# mixed runs, as a real run on macOS showed. Unquoted, it is the command itself.
+dq='/opt/homebrew/bin/zsh -lc "cd web && npm ci"'
+codex_hook "$dq" "Meets requirement — ok" raw
+check "codex reviewer: a double-quoted wrapped install is caught" '[ "$(cat "$st/commands-1.log")" = "cd web && npm ci" ] && reason | grep -q "installed or fetched"'
+mixed=$'/opt/homebrew/bin/zsh -lc "rg -n \'"\'^\'"\\\\s*x\' f; echo \\"$HOME\\"; pip install y"'
+codex_hook "$mixed" "Meets requirement — ok" raw
+check "codex reviewer: mixed quoting unquotes like a shell" '[ "$(cat "$st/commands-1.log")" = "rg -n '"'"'^\s*x'"'"' f; echo \"\$HOME\"; pip install y" ] && reason | grep -q "installed or fetched"'
+codex_hook '/opt/homebrew/bin/zsh -lc "rg -n '"'"'pip install'"'"' README.md"' "Meets requirement — ok" raw
+check "codex reviewer: grep-like mention inside double quotes isn't an install" 'reason | grep -q "(codex reviewer): Meets requirement"'
 codex_hook "python3 -m unittest -v" "Meets requirement — ok" other
 check "codex events in a shape the gate can't read: verdict void, says so" '[ "$(state)" = done ] && reason | grep -q "couldn.t read the codex reviewer.s commands"'
 
