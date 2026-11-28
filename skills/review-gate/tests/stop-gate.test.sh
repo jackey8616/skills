@@ -149,6 +149,9 @@ check "reviewer only grepped for pip install: verdict stands" 'reason | grep -q 
 reset; echo two > a.txt
 out="$(REVIEW_GATE_REVIEWER='cat >/dev/null; echo "python3 -c \"import acme_testkit\" ; pip download --help >/dev/null 2>&1; pip show acme-testkit" >> "$REVIEW_GATE_COMMAND_LOG"; printf "## Verdict\nCannot determine — x\n"' hook "$armblock")"
 check "reviewer ran pip download --help and pip show: not an install" 'reason | grep -q "): Cannot determine"'
+reset; echo two > a.txt
+out="$(REVIEW_GATE_REVIEWER='cat >/dev/null; echo "cat requirements-dev.txt; ls; pip download acme_testkit --help >/dev/null 2>&1; pip list 2>/dev/null | grep -i acme" >> "$REVIEW_GATE_COMMAND_LOG"; printf "## Verdict\nCannot determine — x\n"' hook "$armblock")"
+check "reviewer ran pip download <pkg> --help: not an install" 'reason | grep -q "): Cannot determine"'
 
 # --- What the implementer did, from the session transcript
 reset; echo two > a.txt; tr="$tmp/transcript.jsonl"
