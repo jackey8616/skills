@@ -1,7 +1,9 @@
 ---
-type: llm
-focus: trace
+type: regex
+target: trace
+match: contains
+pattern: 'Stop hook feedback:\\nreview-gate round 1[ /]'
 weight: 1
 ---
 
-At least one message in the transcript is Stop hook feedback that starts with "review-gate round", so the independent review ran through the hook rather than being done by the implementer itself.
+The Stop hook delivered a review-gate round 1 message, so the independent review ran through the hook, not by the implementer itself.

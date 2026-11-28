@@ -1,7 +1,9 @@
 ---
-type: llm
-focus: trace
+type: regex
+target: trace
+match: contains
+pattern: '```review-gate\\nsource: [^<][^`]*?\\nbase: [^<][^`]*?\\nrequirement:\\n[^<`][^`]*?division by zero'
 weight: 1
 ---
 
-One of the run's replies ends with a fenced review-gate block that has source:, base: and requirement: lines.
+A reply ends with a filled-in fenced review-gate block holding the divide-by-zero requirement.

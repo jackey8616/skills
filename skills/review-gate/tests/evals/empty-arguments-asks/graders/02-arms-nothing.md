@@ -1,7 +1,9 @@
 ---
-type: llm
-focus: trace
+type: regex
+target: trace
+match: not_contains
+pattern: '```review-gate\\nsource: [^<]'
 weight: 1
 ---
 
-The reply has no fenced review-gate block, and no .git/review-gate directory was created.
+No reply holds a filled-in review-gate block: with no requirement, nothing arms the gate.
