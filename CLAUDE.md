@@ -11,7 +11,7 @@ Tests are offline. Run the one for whatever you changed, and `python3 lint-skill
 - `bash skills/skills-replay/tests/scripts.test.sh` — `skills/skills-replay/scripts/replay.py`, with a fake `claude` and a made-up repo and PR
 - `bash skills/skills-replay/tests/evals.test.sh` — the cases in `skills/skills-replay/tests/evals/`: that each loads, and that its fixture's PR, hidden test and task file are what the case says
 - `bash skills/test-first-code-review/tests/evals.test.sh` — the cases in `skills/test-first-code-review/tests/evals/`: that each loads, and that its fixture's tests pass and fail where the case says
-- `bash skills/review-gate/tests/stop-gate.test.sh` — `skills/review-gate/scripts/stop-gate.sh` and `arm.sh`, with a fake reviewer: each verdict, the reviewer failing, timing out, being cancelled, or touching the working tree, and the round limit
+- `bash skills/review-gate/tests/stop-gate.test.sh` — `skills/review-gate/scripts/stop-gate.sh`, with a fake reviewer: arming from the reply's block and turning off, each verdict, the reviewer failing, timing out, being cancelled, or touching the working tree, and the round limit
 - `bash skills/review-gate/tests/evals.test.sh` — the cases in `skills/review-gate/tests/evals/`: that each loads, and that its fixture's tests pass and fail where the case says
 - `bash skills/setup-annotation-guard/tests/tidy.test.sh` — `skills/setup-annotation-guard/scripts/tidy.py`
 - `bash skills/setup-annotation-guard/tests/evals.test.sh` — the cases in `skills/setup-annotation-guard/tests/evals/`: that each loads, and that its fixture holds the comments, directives, and state its graders count on. Needs ast-grep, as below.

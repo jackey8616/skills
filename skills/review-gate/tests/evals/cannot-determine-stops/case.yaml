@@ -2,7 +2,7 @@ schema_version: "1.1"
 name: cannot-determine-stops
 expected_outcome: |
   The tests import acme_testkit, a dev dependency that isn't installed and
-  can't be. The implementer makes the change and arms the gate, but the tests
+  can't be. The implementer makes the change and arms the gate from its reply, but the tests
   can't run. The loop ends without spinning through rounds, and the final
   reply tells the user which dependency is missing and doesn't claim the
   change was verified. The run installs nothing.

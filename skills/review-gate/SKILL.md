@@ -5,23 +5,25 @@ hooks:
   Stop:
     - hooks:
         - type: command
-          # Skill hooks don't expand the skill's directory, so arm.sh records where the gate is.
-          command: 'g="$(git rev-parse --absolute-git-dir 2>/dev/null)/review-gate"; [ -f "$g/armed" ] && exec "$(cat "$g/gate-path")"; exit 0'
+          # For a skill's hooks, CLAUDE_PLUGIN_ROOT is the skill's directory.
+          command: '"${CLAUDE_PLUGIN_ROOT}/scripts/stop-gate.sh"'
           timeout: 1800
           statusMessage: "review-gate: independent review running"
 ---
 
 # Review gate
 
-You are the implementer. Claude Code's own turn loop does the looping. This skill adds a Stop hook. Each time you end a turn while the gate is armed, the hook hands the working tree to a reviewer that has none of your context, and that reviewer runs `test-first-code-review` on it. A failing verdict blocks your stop and gives you the report as your next message. A passing verdict lets you stop. You never send rounds or wait on a reviewer yourself.
+You are the implementer. Claude Code's own turn loop does the looping. Invoking this skill registers a Stop hook. Each time you end a turn with the gate armed, the hook hands the working tree to a reviewer that has none of your context, and that reviewer runs `test-first-code-review` on it. A failing verdict blocks your stop and gives you the report as your next message. A passing verdict lets you stop. You never send rounds, wait on a reviewer, or write the gate's state yourself.
 
 Why a hook rather than asking a reviewer yourself: the decision to stop is the one you're worst placed to make about your own work. Claude Code's `/goal` judges "done" from the transcript alone. The gate judges it by running the tests.
 
 Claude Code only. Codex skills can't declare hooks, so in Codex this skill does nothing; use `codex-review` there.
 
-`$ARGUMENTS` is what the work is for: a purpose statement, a PR link, or an issue link. Empty → take it from the conversation: the issue, PR, or task you were given, and say which you took. Nothing there → ask, and arm nothing. A gate armed with no requirement would review against nothing.
+`$ARGUMENTS` is what the work is for: a purpose statement, a PR link, or an issue link. Empty → take it from the conversation: the issue, PR, or task you were given, and say which you took. Nothing there → ask, and write no `review-gate` block. A gate armed with no requirement would review against nothing.
 
-## 1. Arm the gate
+## 1. Arm the gate from your reply
+
+The gate reads only your replies. Hooks run outside Claude Code's Bash sandbox, which makes `.git` read-only, so the gate keeps its own state in `.git/review-gate/` and you never write it.
 
 Fetch the requirement once, so every round reviews against the same text:
 
@@ -29,24 +31,29 @@ Fetch the requirement once, so every round reviews against the same text:
 - Issue link → `gh issue view <url> --json title,body,comments`.
 - Purpose statement → the text itself.
 
-Write it to a file in your scratchpad, outside the repo, so it isn't part of what gets reviewed.
-
 Pick the base the reviewer diffs against:
 
 - A PR, or a branch whose commits are all this work → `git merge-base HEAD origin/<default-branch>`.
 - Only uncommitted changes, on a branch that carries unrelated commits → `HEAD`.
 
-```bash
-bash "${CLAUDE_SKILL_DIR}/scripts/arm.sh" --base <base> --source "<ARGUMENTS>" --requirement-file <file>
-```
+End the reply in which you finish the work with this block. The user sees it, which also shows them exactly what the review is held to:
 
-The gate's state lives in `.git/review-gate/`, outside the working tree. It is tied to this session, so another session in the same repo isn't gated.
+````
+```review-gate
+source: <$ARGUMENTS, or what you took it from>
+base: <the base>
+requirement:
+<the requirement text, verbatim>
+```
+````
+
+Once is enough. The gate keeps it for every later round, and a new block replaces it. If you end a turn having changed files but without a block, the gate stops you once to ask for it.
 
 ## 2. Do the work, then end your turn
 
-Write the change and its tests, run the tests, and end your turn as you normally would. The hook fires at the end of every turn from now on, but it only reviews when the working tree differs from the base. A turn that changed nothing, or a question the user asks, ends straight away.
+Write the change and its tests, run the tests, and end your turn with the block. The hook fires at the end of every turn, but it only reviews when the working tree differs from the base. A turn that changed nothing, or a question the user asks, ends straight away.
 
-A review takes minutes. The status line shows it running. If the user presses Esc, the review is cancelled and the gate disarms.
+A review takes minutes, and the status line shows it running. If the user presses Esc, the review is cancelled and the gate turns off.
 
 ## 3. When the gate blocks
 
@@ -58,11 +65,11 @@ The message that arrives says which round it is and which reviewer ran, and give
 
 End that reply with three lists: `### Fixed`, `### Disputed` (each with its reason), and `### Drafted for after push`. The gate passes your reply to the next round's reviewer, and that list is how a dispute reaches it. Without it, the reviewer raises the same finding again.
 
-If you dispute every finding and fixed nothing, another round would only repeat itself. Tell the user about the dispute and run `bash "${CLAUDE_SKILL_DIR}/scripts/arm.sh" --off`.
+If you dispute every finding and fixed nothing, another round would only repeat itself. Tell the user about the dispute and end your reply with the line `review-gate: off`, which turns the gate off. The same line turns it off whenever the user asks.
 
 ## 4. When the gate lets go
 
-The gate disarms itself with one last message in each of these cases:
+The gate turns itself off with one last message in each of these cases:
 
 - the verdict is Meets requirement;
 - tests can't run (Cannot determine);
@@ -89,7 +96,7 @@ Final verdict: <verdict>
 - <disputed or unfixed finding> — why
 ```
 
-The rounds are in `.git/review-gate/rounds.tsv`, and each report is in `report-<n>.md` beside it. `bash "${CLAUDE_SKILL_DIR}/scripts/arm.sh" --status` prints both.
+The gate's last message gives the path of `rounds.tsv`. Each round's report is in `report-<n>.md` beside it.
 
 Don't commit or push. The changes stay in the working tree for the user.
 
