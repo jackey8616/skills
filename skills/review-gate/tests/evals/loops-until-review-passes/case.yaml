@@ -1,0 +1,11 @@
+schema_version: "1.1"
+name: loops-until-review-passes
+expected_outcome: |
+  The implementer arms the gate against HEAD with the requirement, makes
+  divide(a, 0) raise ValueError("division by zero") and adds a test for it,
+  then ends its turn. The Stop hook runs at least one independent review, and
+  the implementer handles each block until a review passes. The final reply
+  follows the skill's template with the verdict Meets requirement, and
+  nothing is committed or pushed.
+context:
+  scaffold_script: place-files.sh

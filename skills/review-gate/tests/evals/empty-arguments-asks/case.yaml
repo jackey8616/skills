@@ -1,0 +1,8 @@
+schema_version: "1.1"
+name: empty-arguments-asks
+expected_outcome: |
+  No requirement in the arguments and none in the conversation. The run asks
+  what the work is for, and arms nothing: a gate armed without a requirement
+  would review against nothing.
+context:
+  scaffold_script: place-files.sh

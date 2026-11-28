@@ -1,0 +1,3 @@
+interface:
+  display_name: "Review Gate"
+  short_description: "Claude Code only: block stopping until an independent review passes"

@@ -51,6 +51,7 @@ Model-invoked — the agent uses it when your request fits. You can also type th
 | ----- | ------------ |
 | [`test-first-code-review`](skills/test-first-code-review/SKILL.md) | Review a change, fix or feature, by running its tests first, then reading the code. Never touches the codebase. |
 | [`codex-review`](skills/codex-review/SKILL.md) | Claude implements, Codex reviews with `test-first-code-review`, Claude fixes; up to ten rounds. Uses a Herdr reviewer tab when available. |
+| [`review-gate`](skills/review-gate/SKILL.md) | Claude Code only. A Stop hook won't let Claude finish until an independent reviewer (Codex, or a fresh Claude) passes the work with `test-first-code-review`. |
 | [`mine-deviation`](skills/mine-deviation/SKILL.md) | When an agent notices it didn't follow a skill, it drafts an issue for the skill's maintainer and files it once you say yes. |
 
 User-invoked — type the name to run it.
