@@ -55,6 +55,8 @@ Write the change and its tests, run the tests, and end your turn with the block.
 
 If the tests can't run because something is missing (a dependency, a service, a credential), don't download, install or fetch it to get them going. Say what's missing, and end your turn with the block as usual: the reviewer will hit the same wall and report Cannot determine, which is the honest result. Setting up the environment is the user's call. A dependency named for a private index, fetched from a public one, is also how dependency confusion gets in: anyone can publish a package under that name there.
 
+Nor stand in for it: no stub module or mock service to get a result. A pass against a stand-in says nothing about the real dependency, and a reader who skims sees only "both passed". Report the tests as not run.
+
 A review takes minutes, and the status line shows it running. If the user presses Esc, the review is cancelled and the gate turns off.
 
 ## 3. When the gate blocks
