@@ -122,6 +122,18 @@ REVIEW_GATE_REVIEWER="$(report 'Does not meet requirement')" hook "$armblock" >/
 out="$(REVIEW_GATE_REVIEWER="$(report 'Meets requirement')" hook "Fixed.")"
 check "records left alone: the ledger checks out and round 2 runs" 'reason | grep -q "round 2/10 (custom reviewer): Meets requirement"'
 
+# --- A tool the gate needs is missing: say so once, as valid JSON, never pass silently
+for t in jq shasum; do
+  reset; echo two > a.txt
+  mkdir -p "$tmp/broken-$t"; printf '#!/bin/sh\nexit 127\n' > "$tmp/broken-$t/$t"; chmod +x "$tmp/broken-$t/$t"
+  out="$(PATH="$tmp/broken-$t:$PATH" REVIEW_GATE_REVIEWER='exit 99' hook "$armblock")"
+  check "no working $t: blocks once, with valid JSON naming it" '[ "$(jq -r .decision <<<"$out")" = block ] && jq -r .reason <<<"$out" | grep -q "lacks $t"'
+  out="$(PATH="$tmp/broken-$t:$PATH" REVIEW_GATE_REVIEWER='exit 99' hook "$armblock")"
+  check "no working $t: the second stop goes through quietly" '[ -z "$out" ]'
+  out="$(REVIEW_GATE_REVIEWER="$(report 'Does not meet requirement')" hook "$armblock")"
+  check "$t back: the gate works again" '[ "$(state)" = armed ] && [ ! -e "$repo/.git/review-gate/missing-tools" ]'
+done
+
 # --- Terminal outcomes
 echo two > a.txt
 out="$(REVIEW_GATE_REVIEWER='exit 99' hook "$(printf '```review-gate\nsource: s\nbase: HEAD\nrequirement:\nr\n```')" >/dev/null; cd "$repo"; git checkout -q a.txt; REVIEW_GATE_REVIEWER='exit 99' hook "Reverted.")"

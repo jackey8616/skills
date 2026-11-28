@@ -31,8 +31,29 @@ set -uo pipefail
 
 [ -n "${REVIEW_GATE_INSIDE:-}" ] && exit 0   # we are the reviewer's own hook
 
+# The gate needs these. Without one it would let every stop through without a
+# word, so it says so instead: once per repo, as fixed JSON, since jq may be
+# the one that's missing. After that it stays out of the way.
+missing=
+for t in git jq perl shasum; do
+  case "$t" in
+    jq)     jq -n 1 >/dev/null 2>&1 || missing="$missing $t" ;;
+    shasum) printf x | shasum -a 256 >/dev/null 2>&1 || missing="$missing $t" ;;
+    *)      command -v "$t" >/dev/null 2>&1 || missing="$missing $t" ;;
+  esac
+done
+if [ -n "$missing" ]; then
+  cat >/dev/null
+  gd="$(git rev-parse --absolute-git-dir 2>/dev/null)" || exit 0
+  [ -e "$gd/review-gate/missing-tools" ] && exit 0
+  mkdir -p "$gd/review-gate" && echo "$missing" > "$gd/review-gate/missing-tools"
+  printf '{"decision":"block","reason":"review-gate: this machine lacks%s, which the gate needs, so it can'"'"'t review anything and is off for this repo. Tell the user to install it and invoke the skill again. Nothing has been reviewed."}\n' "$missing"
+  exit 0
+fi
+
 in="$(cat)"
 gd="$(git rev-parse --absolute-git-dir 2>/dev/null)" || exit 0
+rm -f "$gd/review-gate/missing-tools"   # the tools are back: report a missing one afresh next time
 sid="$(jq -j '.session_id // "none"' <<<"$in" | tr -c 'A-Za-z0-9_-' _)"
 st="$gd/review-gate/$sid"
 msg="$(jq -r '.last_assistant_message // ""' <<<"$in")"
